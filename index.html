@@ -335,7 +335,7 @@ async function login(){
   $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=session.label+' • '+(session.branch==='All'?'All branches':session.branch);
   ['saleBranch','qBranch','stockBranch','usageBranch'].forEach(id=>{if(session.branch!=='All')$(id).value=session.branch;$(id).disabled=session.branch!=='All'});
   $('accessInfo').textContent=session.branch==='All'?'CEO access: Mansa and Chinsali records.':'Branch access: '+session.branch+' records only.';
-  await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);init();
+  await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);queueCloudSync();init();
  }catch(e){console.error(e);$('loginMessage').textContent='Sign-in/connection failed: '+(e.message||'Please check your details and try again.');if(supabaseClient)await supabaseClient.auth.signOut().catch(()=>{});}
  finally{$('signInButton').disabled=false}
 }
