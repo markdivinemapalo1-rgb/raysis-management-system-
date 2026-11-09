@@ -129,7 +129,7 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 </div>
 <div class="actions no-print"><button class="small" onclick="showPage('performance')">Branch Performance & Revenue</button><button class="small secondary" onclick="showPage('inventory')">Open Stock Inventory</button></div>
 <div class="panel"><div class="panel-head"><h2>Recent transactions</h2><button class="small secondary" onclick="showPage('search')">Open tracking centre</button></div><div id="recentTable" class="tablewrap"></div></div>
-<div class="note">Cloud records are synchronized through Supabase. Audit trail and offline backup remain stored locally in this browser.</div>
+<div class="note">Cloud records and the audit trail are stored in Supabase. Pending writes are queued locally until cloud sync succeeds; keep independent backups.</div>
 </section>
 <section id="sales" class="page">
 <h1>Record sale / job</h1><p class="sub">Create a receipt record for printing jobs, products and services.</p>
@@ -233,7 +233,7 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
   <div class="panel-head"><h2>Stock movement history</h2><button class="small secondary" onclick="downloadStockCSV()">Export stock CSV</button></div>
   <div id="stockMovementTable" class="tablewrap"></div>
 </div>
-<div class="note">Inventory is stored in this browser on this device for now. Separate branch stock is enforced in the screens, but cross-device live stock sharing still requires the cloud database integration.</div>
+<div class="note">Inventory movements are stored in Supabase and branch access is enforced by database policies. Cross-device stock sharing still requires the cloud database integration.</div>
 </section>
 
 <section id="search" class="page">
@@ -276,7 +276,7 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <section id="backup" class="page">
 <h1>Data & backup</h1><p class="sub">Export a backup file regularly. Import a backup to restore or transfer records to another device.</p>
 <div class="panel"><h2>Backup and restore</h2><div class="actions"><button onclick="downloadBackup()">Download full backup (JSON)</button><label class="secondary" style="padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:700">Import backup <input id="backupFile" type="file" accept=".json,application/json" style="display:none" onchange="importBackup(event)"></label><button class="secondary" onclick="downloadSalesCSV()">Export transactions CSV</button></div><p class="muted">Keep backup files in a safe place. Importing a backup replaces the records currently stored in this browser.</p></div>
-<div class="panel"><h2>Branch access</h2><p id="accessInfo"></p><div class="note">Demo accounts: CEO (all branches), Mansa user (Mansa only), Chinsali user (Chinsali only). Demo PIN is 1234 for all accounts. This is a prototype login, not secure production authentication.</div></div>
+<div class="panel"><h2>Branch access</h2><p id="accessInfo"></p><div class="note">Accounts use Supabase email/password authentication. Branch access is enforced by Supabase Row Level Security. CEO account administration is available only through the protected CEO Edge Function.</div></div>
 <div class="panel"><h2>System readiness</h2><ul><li>Offline browser storage: available on this device after the page has loaded.</li><li>Branch performance reports: daily, weekly, monthly and yearly sales, collections and balances.</li><li>Stock inventory: separate branch quantities, receipts, material usage and movement history; metres tracked without purchase costs.</li><li>Invoices and delivery notes: accepted quotations can be converted to linked sales, with downloadable PDF documents carrying Raysis business details.</li><li>Cross-device cloud synchronization: connected through Supabase when signed in online.</li><li>Secure email/password authentication and branch permissions: enforced by Supabase Auth and Row Level Security.</li><li>Keep regular JSON backups; cloud database backups depend on your Supabase plan.</li></ul></div>
 </section>
 </main></div><footer>Raysis Management System V2 • Prototype build • Keep independent backups of important business records.</footer>
