@@ -362,6 +362,7 @@ async function loadCloudData(){
  // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
 }
 function queueCloudSync(){syncQueue=syncQueue.then(()=>syncCloudData()).catch(e=>{console.error(e);setCloudStatus('Cloud sync error');});}
+window.addEventListener('online',()=>{if(cloudReady)queueCloudSync();});
 async function insertOnce(table,row,operationId){
  const payload={...row,client_operation_id:operationId};
  let result=await supabaseClient.from(table).insert(payload).select('*').single();
