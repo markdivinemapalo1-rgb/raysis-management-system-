@@ -330,8 +330,8 @@ async function loadCloudData(){
  db.sales=(sr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,receipt:r.receipt_number,date:r.transaction_date,customer:r.customer_name,phone:r.customer_phone||'',product:r.product_service,total:Number(r.total_amount),paid:Number(r.amount_paid),method:r.payment_method||'Cash',notes:r.notes||'',user:r.recorded_by||'',items:r.items||[],material:r.material_name||'',metres:Number(r.metres_used||0),invoiceNo:r.invoice_number||'INV-'+String(r.id).slice(-7),deliveryNo:r.delivery_note_number||'DN-'+String(r.id).slice(-7),quoteId:r.quotation_id,quoteNumber:r.quotation_number}));
  db.quotes=(qr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,number:r.quotation_number,date:r.quotation_date,customer:r.customer_name,contact:r.customer_contact||'',validity:Number(r.validity_days||14),items:r.items||[],terms:r.terms||'',total:Number(r.total_amount),user:r.recorded_by||'',convertedSaleId:r.accepted_sale_id,acceptedDate:r.accepted_date}));
  db.stockMovements=(mr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,material:r.material_name,metres:Number(r.quantity_metres),type:r.movement_type,date:r.movement_date,reason:r.reason||'',user:r.recorded_by||''}));
- // Audit entries remain browser-local; business records are loaded from the secured cloud database.
- loadLocal();
+ // Supabase is authoritative after login. Never replace freshly loaded cloud records with a stale browser snapshot.
+ // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
 }
 function queueCloudSync(){syncQueue=syncQueue.then(()=>syncCloudData()).catch(e=>{console.error(e);setCloudStatus('Cloud sync error');});}
 async function syncCloudData(){if(!cloudReady||!supabaseClient||!session)return;
