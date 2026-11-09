@@ -139,7 +139,7 @@ create or replace function public.convert_quotation_to_sale(
 language plpgsql
 security definer
 set search_path = public
-as $
+as $$
 declare
   q public.quotations%rowtype;
   v_profile public.profiles%rowtype;
@@ -176,7 +176,7 @@ begin
     where id=q.id;
   return v_sale_id;
 end;
-$;
+$$;
 revoke all on function public.convert_quotation_to_sale(bigint,numeric,text) from public, anon;
 grant execute on function public.convert_quotation_to_sale(bigint,numeric,text) to authenticated;
 
