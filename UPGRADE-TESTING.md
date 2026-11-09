@@ -54,8 +54,8 @@ Use the service-role key only in the command-line secret setting prompt/environm
 
 ## Important limitations before production approval
 
-- The app's accepted-quotation conversion and initial sale payment are still stored in the sales/quotation records, not yet converted into a fully atomic multi-table payment workflow.
-- Stock consumption from a sale is currently a separate append-only movement insert, not an atomic database transaction with the sale. A database RPC is needed before treating stock and sale writes as all-or-nothing.
+- Accepted-quotation conversion is handled by a database RPC that atomically creates the sale and marks the quotation accepted. The initial payment remains recorded in the sales.amount_paid field; a separate append-only payments workflow is not implemented in this upgrade.
+- Stock consumption from a sale is currently a separate append-only movement insert, not an atomic database transaction with the sale. Do not treat sale and stock writes as all-or-nothing.
 - Offline retry only applies to records created by this upgraded code and retained locally; it does not automatically migrate old unmarked browser-only records.
 - The Edge Function lists up to 1,000 users per call.
 - The migration has not been executed against the live Supabase database from this repository, and real branch/JWT security tests have not yet been run. Do not describe those tests as passed until performed.
