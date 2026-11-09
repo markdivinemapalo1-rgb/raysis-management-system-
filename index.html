@@ -473,19 +473,24 @@ function printQuote(){if(!lastQuote)previewQuote();if(!lastQuote)return;$('print
 function saveQuote(){const q=quoteObject();if(!q.customer||!q.items.length||q.items.some(i=>!i.description||i.qty<=0||i.price<0)){alert('Enter a customer and at least one valid item line: Description | Qty | Unit price.');return}if(db.quotes.some(x=>x.number===q.number)){alert('That quotation number already exists.');return}db.quotes.unshift(q);log('Quotation saved',q.number+' • '+q.customer+' • '+money(q.total));persist();lastQuote=q;renderQuotes();renderDashboard();alert('Quotation saved. When the customer accepts it, use Accept & create sale to record payment and generate the linked invoice and delivery note.')}
 function renderQuotes(){const a=visibleQuotes();$('quotesTable').innerHTML=a.length?'<table><thead><tr><th>Quotation</th><th>Date</th><th>Branch</th><th>Customer</th><th>Total</th><th>Recorded by</th><th>Next step</th></tr></thead><tbody>'+a.map(q=>`<tr><td>${esc(q.number)}</td><td>${esc(q.date)}</td><td>${esc(q.branch)}</td><td>${esc(q.customer)}<div class="muted">${esc(q.contact)}</div></td><td>${money(q.total)}</td><td>${esc(q.user)}</td><td>${q.convertedSaleId?'<span class="tag paid">Sale created</span>':'<button class="small" onclick="acceptQuotation('+q.id+')">Accept & create sale</button>'}</td></tr>`).join('')+'</tbody></table>':'<div class="empty">No quotations saved yet.</div>'}
 
-function acceptQuotation(quoteId){
-  const q=db.quotes.find(x=>String(x.id)===String(quoteId));if(!q)return;
-  if(q.convertedSaleId){alert('This quotation has already been converted to a sale.');return;}
-  const paidText=prompt('Quotation total: '+money(q.total)+'\nEnter amount received now (enter 0 if no payment has been received):','0');
-  if(paidText===null)return;const paid=Number(paidText);
-  if(!Number.isFinite(paid)||paid<0||paid>q.total){alert('Enter a valid payment between K0 and the quotation total.');return;}
-  const id=Date.now(),branch=q.branch,receipt='RYS-'+branch.slice(0,1).toUpperCase()+'-'+id.toString().slice(-7);
+async function acceptQuotation(quoteId){
+ const q=db.quotes.find(x=>String(x.id)===String(quoteId));if(!q)return;
+ if(q.convertedSaleId){alert('This quotation has already been converted to a sale.');return;}
+ const paidText=prompt('Quotation total: '+money(q.total)+'\\nEnter amount received now (enter 0 if no payment has been received):','0');
+ if(paidText===null)return;const paid=Number(paidText);
+ if(!Number.isFinite(paid)||paid<0||paid>q.total){alert('Enter a valid payment between K0 and the quotation total.');return;}
+ try{
+  if(!q.cloudSaved)await syncCloudData();
+  const receipt='RYS-'+q.branch.slice(0,1).toUpperCase()+'-'+Date.now().toString().slice(-7);
+  const {data:saleId,error}=await supabaseClient.rpc('convert_quotation_to_sale',{p_quote_id:Number(q.id),p_paid:paid,p_receipt_number:receipt});
+  if(error)throw error;
   const items=(q.items||[]).map(i=>({description:i.description,qty:Number(i.qty)||1,price:Number(i.price)||0}));
-  const sale={id,clientOperationId:crypto.randomUUID(),cloudSaved:false,branch,receipt,date:today(),customer:q.customer,phone:q.contact||'',product:items.map(i=>i.description).join(', '),items,total:Number(q.total)||0,paid,method:'Cash',notes:'Created from accepted quotation '+q.number+(q.terms?' • '+q.terms:''),user:session.label,quoteId:q.id,quoteNumber:q.number,invoiceNo:'INV-'+branch.slice(0,1).toUpperCase()+'-'+id.toString().slice(-7),deliveryNo:'DN-'+branch.slice(0,1).toUpperCase()+'-'+id.toString().slice(-7)};
-  db.sales.unshift(sale);q.convertedSaleId=id;q.acceptedDate=sale.date;
-  log('Quotation accepted and converted to sale',q.number+' → '+receipt+' • '+q.customer+' • '+money(q.total));persist();renderQuotes();renderSales();renderDashboard();renderSearch();
-  if(confirm('Sale created successfully. Download the invoice PDF now?'))downloadSaleDocument(id,'invoice');
-  if(confirm('Download the delivery note PDF now?'))downloadSaleDocument(id,'delivery');
+  const sale={id:Number(saleId),cloudSaved:true,branch:q.branch,receipt,date:today(),customer:q.customer,phone:q.contact||'',product:items.map(i=>i.description).join(', '),items,total:Number(q.total)||0,paid,method:'Cash',notes:'Created from accepted quotation '+q.number,user:session.label,quoteId:q.id,quoteNumber:q.number,invoiceNo:'INV-'+q.branch.slice(0,1).toUpperCase()+'-'+receipt.slice(-7),deliveryNo:'DN-'+q.branch.slice(0,1).toUpperCase()+'-'+receipt.slice(-7)};
+  db.sales.unshift(sale);q.convertedSaleId=Number(saleId);q.acceptedDate=sale.date;q.cloudSaved=true;
+  persist();renderQuotes();renderSales();renderDashboard();renderSearch();
+  if(confirm('Sale created successfully. Download the invoice PDF now?'))downloadSaleDocument(sale.id,'invoice');
+  if(confirm('Download the delivery note now?'))downloadSaleDocument(sale.id,'delivery');
+ }catch(e){alert('Quotation conversion failed: '+(e.message||e));}
 }
 function logoDataURL(){return new Promise(resolve=>{const img=new Image();img.onload=()=>{try{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);resolve(c.toDataURL('image/jpeg',0.88));}catch(e){resolve(null);}};img.onerror=()=>resolve(null);img.src='raysis-logo.jpeg';})}
 async function downloadSaleDocument(saleId,kind){
