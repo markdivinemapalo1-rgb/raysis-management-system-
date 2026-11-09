@@ -114,6 +114,8 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 
 <button data-page="search" onclick="showPage('search',this)">Search & tracking</button>
 <button data-page="audit" onclick="showPage('audit',this)">Audit trail</button>
+<button data-page="corrections" onclick="showPage(&quot;corrections&quot;,this)">Correction requests</button>
+<button id="usersNav" data-page="users" onclick="showPage(&quot;users&quot;,this)">User administration</button>
 <button data-page="backup" onclick="showPage('backup',this)">Data & backup</button>
 </nav>
 <main>
@@ -253,6 +255,24 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <h1>Audit trail</h1><p class="sub">A record of transactions, quotations and backup actions captured in this browser.</p>
 <div class="panel"><div id="auditTable" class="tablewrap"></div></div>
 </section>
+<section id="corrections" class="page">
+<h1>Correction requests</h1><p class="sub">Staff submit correction requests; the CEO reviews them.</p>
+<div class="panel"><div class="formgrid">
+<div class="field"><label>Record type</label><select id="correctionType"><option value="sale">Sale / job</option><option value="quotation">Quotation</option><option value="stock_movement">Stock movement</option><option value="payment">Payment</option></select></div>
+<div class="field"><label>Record reference</label><input id="correctionRecord" placeholder="Receipt / quotation / record ID"></div>
+<div class="field span3"><label>Reason and requested change</label><textarea id="correctionReason" rows="3"></textarea></div>
+</div><div class="actions"><button onclick="submitCorrection()">Submit request</button></div></div>
+<div class="panel"><h2>Requests</h2><div id="correctionTable" class="tablewrap"></div></div></section>
+<section id="users" class="page">
+<h1>CEO user administration</h1><p class="sub">CEO-only account management.</p>
+<div class="panel"><h2>Create account</h2><div class="formgrid">
+<div class="field"><label>Full name</label><input id="newUserName"></div>
+<div class="field"><label>Email</label><input id="newUserEmail" type="email"></div>
+<div class="field"><label>Temporary password (10+ characters)</label><input id="newUserPassword" type="password"></div>
+<div class="field"><label>Role</label><select id="newUserRole"><option value="branch_user">Branch user</option><option value="ceo">CEO</option></select></div>
+<div class="field"><label>Branch</label><select id="newUserBranch"><option>Mansa</option><option>Chinsali</option></select></div>
+</div><div class="actions"><button onclick="createStaffUser()">Create account</button><button class="secondary" onclick="loadStaffUsers()">Refresh users</button></div></div>
+<div class="panel"><h2>Users</h2><div id="usersTable" class="tablewrap"></div></div></section>
 <section id="backup" class="page">
 <h1>Data & backup</h1><p class="sub">Export a backup file regularly. Import a backup to restore or transfer records to another device.</p>
 <div class="panel"><h2>Backup and restore</h2><div class="actions"><button onclick="downloadBackup()">Download full backup (JSON)</button><label class="secondary" style="padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:700">Import backup <input id="backupFile" type="file" accept=".json,application/json" style="display:none" onchange="importBackup(event)"></label><button class="secondary" onclick="downloadSalesCSV()">Export transactions CSV</button></div><p class="muted">Keep backup files in a safe place. Importing a backup replaces the records currently stored in this browser.</p></div>
@@ -311,6 +331,7 @@ async function login(){
   const user=data.user;const {data:profile,error:pe}=await supabaseClient.from('profiles').select('full_name,role,branch_name').eq('id',user.id).single();if(pe)throw pe;
   if(!profile||!['ceo','branch_user'].includes(profile.role))throw new Error('Your Raysis profile is not configured. Contact the CEO.');
   session={userId:user.id,email:user.email,role:profile.role,branch:profile.role==='ceo'?'All':profile.branch_name,label:profile.full_name||email};
+  $('usersNav').style.display=session.role==='ceo'?'':'none';
   $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=session.label+' • '+(session.branch==='All'?'All branches':session.branch);
   ['saleBranch','qBranch','stockBranch','usageBranch'].forEach(id=>{if(session.branch!=='All')$(id).value=session.branch;$(id).disabled=session.branch!=='All'});
   $('accessInfo').textContent=session.branch==='All'?'CEO access: Mansa and Chinsali records.':'Branch access: '+session.branch+' records only.';
@@ -344,7 +365,7 @@ async function syncCloudData(){if(!cloudReady||!supabaseClient||!session)return;
 function log(action,detail){db.audit.unshift({id:Date.now()+Math.random(),date:new Date().toLocaleString(),user:session?.label||'System',branch:session?.branch||'All',action,detail});persist()}
 function visibleSales(){return db.sales.filter(s=>session.branch==='All'||s.branch===session.branch)}
 function visibleQuotes(){return db.quotes.filter(q=>session.branch==='All'||q.branch===session.branch)}
-function showPage(id,btn){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));if(id==='dashboard')renderDashboard();if(id==='sales')renderSales();if(id==='quotations')renderQuotes();if(id==='search')renderSearch();if(id==='audit')renderAudit();if(id==='performance')renderPerformance();if(id==='inventory')renderInventory()}
+function showPage(id,btn){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));if(id==='dashboard')renderDashboard();if(id==='sales')renderSales();if(id==='quotations')renderQuotes();if(id==='search')renderSearch();if(id==='audit')renderAudit();if(id==='corrections')loadCorrectionRequests();if(id==='users'&&session?.role==='ceo')loadStaffUsers();if(id==='performance')renderPerformance();if(id==='inventory')renderInventory()}
 function init(){$('saleDate').value=today();$('qDate').value=today();renderDashboard();renderSales();renderQuotes();renderSearch();renderAudit();$('reportDate').value=today();renderPerformance();renderInventory()}
 function paymentStatus(s){return s.paid>=s.total?'Paid':s.paid>0?'Partially paid':'Unpaid'}
 function tag(status){return '<span class="tag '+(status==='Paid'?'paid':status==='Unpaid'?'unpaid':'partial')+'">'+status+'</span>'}
