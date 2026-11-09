@@ -166,7 +166,7 @@ begin
     items, invoice_number, delivery_note_number, quotation_id, quotation_number, recorded_by
   ) values (
     q.branch_name, p_receipt_number, current_date, q.customer_name, q.customer_contact,
-    (select string_agg(item->>'description', ', ') from jsonb_array_elements(q.items) item),
+    (select string_agg(elem.value->>'description', ', ') from jsonb_array_elements(q.items) as elem(value)),
     q.total_amount, p_paid, 'Cash', 'Created from accepted quotation ' || q.quotation_number,
     auth.uid(), q.items, v_invoice, v_delivery, q.id, q.quotation_number, coalesce(v_profile.full_name,'')
   ) returning id into v_sale_id;
