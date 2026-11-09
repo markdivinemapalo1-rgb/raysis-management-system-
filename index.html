@@ -492,6 +492,55 @@ function clearQuote(){['qNumber','qCustomer','qContact','qItems','qTerms'].forEa
 function renderSearch(){if(!session)return;let a=visibleSales();const val=id=>$(id).value.trim().toLowerCase();if(val('fFrom'))a=a.filter(s=>s.date>=val('fFrom'));if(val('fTo'))a=a.filter(s=>s.date<=val('fTo'));if(val('fBranch'))a=a.filter(s=>s.branch===val('fBranch'));if(val('fReceipt'))a=a.filter(s=>s.receipt.toLowerCase().includes(val('fReceipt')));if(val('fCustomer'))a=a.filter(s=>(s.customer+' '+s.phone).toLowerCase().includes(val('fCustomer')));if(val('fProduct'))a=a.filter(s=>s.product.toLowerCase().includes(val('fProduct')));if(val('fStatus'))a=a.filter(s=>paymentStatus(s)===val('fStatus'));if(val('fMin'))a=a.filter(s=>s.total>=Number(val('fMin')));if(val('fMax'))a=a.filter(s=>s.total<=Number(val('fMax')));if(val('fUser'))a=a.filter(s=>s.user.toLowerCase().includes(val('fUser')));window.searchResults=a;$('resultCount').textContent=a.length+' result(s)';$('searchTable').innerHTML=salesRows(a)}
 function clearFilters(){['fFrom','fTo','fReceipt','fCustomer','fProduct','fMin','fMax','fUser'].forEach(id=>$(id).value='');['fBranch','fStatus'].forEach(id=>$(id).value='');renderSearch()}
 function renderAudit(){const a=db.audit.filter(x=>session.branch==='All'||x.branch===session.branch);$('auditTable').innerHTML=a.length?'<table><thead><tr><th>Date & time</th><th>User</th><th>Branch</th><th>Action</th><th>Details</th></tr></thead><tbody>'+a.map(x=>`<tr><td>${esc(x.date)}</td><td>${esc(x.user)}</td><td>${esc(x.branch)}</td><td>${esc(x.action)}</td><td>${esc(x.detail)}</td></tr>`).join('')+'</tbody></table>':'<div class="empty">No audit entries yet.</div>'}
+
+async function submitCorrection(){
+ if(!session)return;
+ const reason=$('correctionReason').value.trim(),entity_id=$('correctionRecord').value.trim();
+ if(!reason||!entity_id){alert('Enter a record reference and explain the correction.');return;}
+ const branch_name=session.branch==='All'?$('saleBranch').value:session.branch;
+ const {error}=await supabaseClient.from('correction_requests').insert({branch_name,entity_type:$('correctionType').value,entity_id,reason,proposed_changes:{},requested_by:session.userId});
+ if(error){alert('Could not submit: '+error.message);return;}
+ $('correctionReason').value='';$('correctionRecord').value='';await loadCorrectionRequests();alert('Correction request submitted.');
+}
+async function loadCorrectionRequests(){
+ if(!session)return;
+ const {data,error}=await supabaseClient.from('correction_requests').select('*').order('requested_at',{ascending:false}).limit(300);
+ if(error){$('correctionTable').textContent='Correction requests unavailable. Apply the database migration first. '+error.message;return;}
+ const rows=data||[];
+ $('correctionTable').innerHTML=rows.length?'<table><thead><tr><th>Date</th><th>Branch</th><th>Record</th><th>Reason</th><th>Status</th><th>Review</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+esc(new Date(x.requested_at).toLocaleString())+'</td><td>'+esc(x.branch_name)+'</td><td>'+esc(x.entity_type)+' / '+esc(x.entity_id)+'</td><td>'+esc(x.reason)+'</td><td>'+esc(x.status)+'</td><td>'+(session.role==='ceo'&&x.status==='pending'?'<button class="small" onclick="reviewCorrection('+Number(x.id)+',\'approved\')">Approve</button> <button class="small secondary" onclick="reviewCorrection('+Number(x.id)+',\'rejected\')">Reject</button>':'—')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No correction requests yet.</div>';
+}
+async function reviewCorrection(id,status){
+ if(session?.role!=='ceo')return;
+ const review_note=prompt('Optional review note:','')||'';
+ const {error}=await supabaseClient.from('correction_requests').update({status,reviewed_by:session.userId,reviewed_at:new Date().toISOString(),review_note}).eq('id',id);
+ if(error){alert('Review failed: '+error.message);return;}await loadCorrectionRequests();
+}
+async function adminCall(payload){
+ const {data:{session:authSession}}=await supabaseClient.auth.getSession();
+ if(!authSession)throw new Error('Sign in again.');
+ const {data,error}=await supabaseClient.functions.invoke('ceo-user-admin',{body:payload,headers:{Authorization:'Bearer '+authSession.access_token}});
+ if(error)throw error;if(data&&data.error)throw new Error(data.error);return data;
+}
+async function loadStaffUsers(){
+ if(session?.role!=='ceo')return;
+ $('usersTable').textContent='Loading users…';
+ try{
+  const result=await adminCall({action:'list'}),users=result.users||[];
+  $('usersTable').innerHTML=users.length?'<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Branch</th><th>Access</th><th>Actions</th></tr></thead><tbody>'+users.map(u=>'<tr><td>'+esc(u.full_name)+'</td><td>'+esc(u.email)+'</td><td>'+esc(u.role)+'</td><td>'+esc(u.branch_name||'All')+'</td><td>'+(u.disabled?'Disabled':'Active')+'</td><td><button class="small secondary" onclick="toggleStaffUser(\''+u.id+'\','+(u.disabled?'true':'false')+')">'+(u.disabled?'Enable':'Disable')+'</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">No profiles found.</div>';
+ }catch(e){$('usersTable').textContent='User administration unavailable: '+(e.message||e)+'. Deploy the CEO Edge Function first.';}
+}
+async function createStaffUser(){
+ if(session?.role!=='ceo')return;
+ const payload={action:'create',full_name:$('newUserName').value.trim(),email:$('newUserEmail').value.trim(),password:$('newUserPassword').value,role:$('newUserRole').value,branch_name:$('newUserBranch').value};
+ try{await adminCall(payload);$('newUserName').value='';$('newUserEmail').value='';$('newUserPassword').value='';await loadStaffUsers();alert('Account created. Send the temporary password securely.');}
+ catch(e){alert('Account creation failed: '+(e.message||e));}
+}
+async function toggleStaffUser(id,isDisabled){
+ if(!confirm((isDisabled?'Enable':'Disable')+' this account?'))return;
+ try{await adminCall({action:isDisabled?'enable':'disable',user_id:id});await loadStaffUsers();}
+ catch(e){alert('Account status change failed: '+(e.message||e));}
+}
+
 function csv(rows){return rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')}
 function download(name,content,type){const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
 function downloadStockCSV(){const a=(db.stockMovements||[]).filter(m=>session.branch==='All'||m.branch===session.branch),rows=[['Date','Branch','Material','Movement','Metres','Reason','Recorded by'],...a.map(m=>[m.date,m.branch,m.material,m.type,m.metres,m.reason,m.user])];download('raysis_stock_movements.csv','\\ufeff'+csv(rows),'text/csv;charset=utf-8');log('Stock movements CSV exported',a.length+' rows')}
