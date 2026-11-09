@@ -351,6 +351,13 @@ async function loadCloudData(){
  db.sales=(sr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,receipt:r.receipt_number,date:r.transaction_date,customer:r.customer_name,phone:r.customer_phone||'',product:r.product_service,total:Number(r.total_amount),paid:Number(r.amount_paid),method:r.payment_method||'Cash',notes:r.notes||'',user:r.recorded_by||'',items:r.items||[],material:r.material_name||'',metres:Number(r.metres_used||0),invoiceNo:r.invoice_number||'INV-'+String(r.id).slice(-7),deliveryNo:r.delivery_note_number||'DN-'+String(r.id).slice(-7),quoteId:r.quotation_id,quoteNumber:r.quotation_number,cloudSaved:true}));
  db.quotes=(qr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,number:r.quotation_number,date:r.quotation_date,customer:r.customer_name,contact:r.customer_contact||'',validity:Number(r.validity_days||14),items:r.items||[],terms:r.terms||'',total:Number(r.total_amount),user:r.recorded_by||'',convertedSaleId:r.accepted_sale_id,acceptedDate:r.accepted_date,cloudSaved:true}));
  db.stockMovements=(mr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,material:r.material_name,metres:Number(r.quantity_metres),type:r.movement_type,date:r.movement_date,reason:r.reason||'',user:r.recorded_by||'',cloudSaved:true}));
+ // Restore only records explicitly marked as not yet accepted by the cloud.
+ try{
+  const local=JSON.parse(localStorage.getItem(KEY)||'{}');
+  db.sales.push(...(Array.isArray(local.sales)?local.sales.filter(x=>x.cloudSaved===false):[]));
+  db.quotes.push(...(Array.isArray(local.quotes)?local.quotes.filter(x=>x.cloudSaved===false):[]));
+  db.stockMovements.push(...(Array.isArray(local.stockMovements)?local.stockMovements.filter(x=>x.cloudSaved===false):[]));
+ }catch(e){console.warn('Pending offline queue could not be restored',e);}
  // Supabase is authoritative after login. Never replace freshly loaded cloud records with a stale browser snapshot.
  // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
 }
@@ -516,7 +523,13 @@ async function downloadSaleDocument(saleId,kind){
 function clearQuote(){['qNumber','qCustomer','qContact','qItems','qTerms'].forEach(id=>$(id).value='');$('qDate').value=today();$('qValidity').value=14;$('quotePreview').classList.add('hidden');lastQuote=null}
 function renderSearch(){if(!session)return;let a=visibleSales();const val=id=>$(id).value.trim().toLowerCase();if(val('fFrom'))a=a.filter(s=>s.date>=val('fFrom'));if(val('fTo'))a=a.filter(s=>s.date<=val('fTo'));if(val('fBranch'))a=a.filter(s=>s.branch===val('fBranch'));if(val('fReceipt'))a=a.filter(s=>s.receipt.toLowerCase().includes(val('fReceipt')));if(val('fCustomer'))a=a.filter(s=>(s.customer+' '+s.phone).toLowerCase().includes(val('fCustomer')));if(val('fProduct'))a=a.filter(s=>s.product.toLowerCase().includes(val('fProduct')));if(val('fStatus'))a=a.filter(s=>paymentStatus(s)===val('fStatus'));if(val('fMin'))a=a.filter(s=>s.total>=Number(val('fMin')));if(val('fMax'))a=a.filter(s=>s.total<=Number(val('fMax')));if(val('fUser'))a=a.filter(s=>s.user.toLowerCase().includes(val('fUser')));window.searchResults=a;$('resultCount').textContent=a.length+' result(s)';$('searchTable').innerHTML=salesRows(a)}
 function clearFilters(){['fFrom','fTo','fReceipt','fCustomer','fProduct','fMin','fMax','fUser'].forEach(id=>$(id).value='');['fBranch','fStatus'].forEach(id=>$(id).value='');renderSearch()}
-function renderAudit(){const a=db.audit.filter(x=>session.branch==='All'||x.branch===session.branch);$('auditTable').innerHTML=a.length?'<table><thead><tr><th>Date & time</th><th>User</th><th>Branch</th><th>Action</th><th>Details</th></tr></thead><tbody>'+a.map(x=>`<tr><td>${esc(x.date)}</td><td>${esc(x.user)}</td><td>${esc(x.branch)}</td><td>${esc(x.action)}</td><td>${esc(x.detail)}</td></tr>`).join('')+'</tbody></table>':'<div class="empty">No audit entries yet.</div>'}
+async function renderAudit(){
+ if(!session)return;
+ const {data,error}=await supabaseClient.from('audit_logs').select('*').order('occurred_at',{ascending:false}).limit(300);
+ if(error){$('auditTable').textContent='Cloud audit unavailable. Apply the migration and reload. '+error.message;return;}
+ const rows=data||[];
+ $('auditTable').innerHTML=rows.length?'<table><thead><tr><th>Date & time</th><th>Actor ID</th><th>Branch</th><th>Table</th><th>Action</th><th>Record</th></tr></thead><tbody>'+rows.map(x=>'<tr><td>'+esc(new Date(x.occurred_at).toLocaleString())+'</td><td>'+esc(x.actor_id||'System')+'</td><td>'+esc(x.branch_name||'—')+'</td><td>'+esc(x.table_name)+'</td><td>'+esc(x.action)+'</td><td>'+esc(x.record_id||'—')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">No cloud audit entries yet.</div>';
+}
 
 async function submitCorrection(){
  if(!session)return;
