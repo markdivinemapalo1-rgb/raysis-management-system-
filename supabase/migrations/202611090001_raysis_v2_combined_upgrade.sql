@@ -128,4 +128,56 @@ create trigger raysis_audit_correction_requests
 after insert or update or delete on public.correction_requests
 for each row execute function public.capture_raysis_audit();
 
+
+-- Atomic accepted-quotation conversion: branch-scoped validation, sale insert,
+-- and quotation acceptance happen in one database transaction.
+create or replace function public.convert_quotation_to_sale(
+  p_quote_id bigint,
+  p_paid numeric,
+  p_receipt_number text
+) returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  q public.quotations%rowtype;
+  v_profile public.profiles%rowtype;
+  v_sale_id bigint;
+  v_invoice text;
+  v_delivery text;
+begin
+  select * into v_profile from public.profiles where id = auth.uid();
+  if not found then raise exception 'Authenticated Raysis profile required'; end if;
+  select * into q from public.quotations where id = p_quote_id for update;
+  if not found then raise exception 'Quotation not found'; end if;
+  if v_profile.role <> 'ceo' and v_profile.branch_name is distinct from q.branch_name then
+    raise exception 'You cannot convert a quotation from another branch';
+  end if;
+  if q.accepted_sale_id is not null then raise exception 'Quotation has already been converted'; end if;
+  if p_paid is null or p_paid < 0 or p_paid > q.total_amount then raise exception 'Invalid payment amount'; end if;
+  if coalesce(trim(p_receipt_number),'') = '' then raise exception 'Receipt number is required'; end if;
+
+  v_invoice := 'INV-' || left(upper(q.branch_name),1) || '-' || right(p_receipt_number,7);
+  v_delivery := 'DN-' || left(upper(q.branch_name),1) || '-' || right(p_receipt_number,7);
+  insert into public.sales(
+    branch_name, receipt_number, transaction_date, customer_name, customer_phone,
+    product_service, total_amount, amount_paid, payment_method, notes, created_by,
+    items, invoice_number, delivery_note_number, quotation_id, quotation_number, recorded_by
+  ) values (
+    q.branch_name, p_receipt_number, current_date, q.customer_name, q.customer_contact,
+    (select string_agg(item->>'description', ', ') from jsonb_array_elements(q.items) item),
+    q.total_amount, p_paid, 'Cash', 'Created from accepted quotation ' || q.quotation_number,
+    auth.uid(), q.items, v_invoice, v_delivery, q.id, q.quotation_number, coalesce(v_profile.full_name,'')
+  ) returning id into v_sale_id;
+
+  update public.quotations
+    set status='accepted', accepted_sale_id=v_sale_id, accepted_date=current_date
+    where id=q.id;
+  return v_sale_id;
+end;
+$;
+revoke all on function public.convert_quotation_to_sale(bigint,numeric,text) from public, anon;
+grant execute on function public.convert_quotation_to_sale(bigint,numeric,text) to authenticated;
+
 commit;
