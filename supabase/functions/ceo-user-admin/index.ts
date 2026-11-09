@@ -32,6 +32,14 @@ Deno.serve(async (req) => {
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return reply({ error: "Invalid JSON body" }, 400); }
+  const writeAdminAudit = async (actionName: string, recordId: string, branchName: string | null, detail: Record<string, unknown>) => {
+    const { error } = await admin.from("audit_logs").insert({
+      actor_id: authData.user.id, branch_name: branchName, table_name: "profiles",
+      record_id: recordId, action: actionName, new_data: detail,
+    });
+    if (error) console.error("Could not write CEO administration audit row:", error.message);
+  };
+
   const action = body.action;
 
   if (action === "list") {
@@ -66,6 +74,7 @@ Deno.serve(async (req) => {
       await admin.auth.admin.deleteUser(data.user.id);
       return reply({ error: "Profile creation failed: " + insertError.message }, 400);
     }
+    await writeAdminAudit("CEO_CREATE_USER", data.user.id, branch_name, { email, full_name, role, branch_name });
     return reply({ created: true, user_id: data.user.id });
   }
 
@@ -81,6 +90,7 @@ Deno.serve(async (req) => {
     if (userId === authData.user.id && role !== "ceo") return reply({ error: "You cannot remove your own CEO role" }, 400);
     const { error } = await admin.from("profiles").update({ full_name, role, branch_name }).eq("id", userId);
     if (error) return reply({ error: error.message }, 400);
+    await writeAdminAudit("CEO_UPDATE_USER", userId, branch_name, { full_name, role, branch_name });
     return reply({ updated: true });
   }
 
@@ -91,6 +101,7 @@ Deno.serve(async (req) => {
       ban_duration: action === "disable" ? "876000h" : "none",
     });
     if (error) return reply({ error: error.message }, 400);
+    await writeAdminAudit(action === "disable" ? "CEO_DISABLE_USER" : "CEO_ENABLE_USER", userId, null, { action });
     return reply({ [action === "disable" ? "disabled" : "enabled"]: true });
   }
 
