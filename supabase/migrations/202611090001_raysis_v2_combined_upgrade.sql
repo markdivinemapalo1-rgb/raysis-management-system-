@@ -122,4 +122,10 @@ grant select, insert, update on public.correction_requests to authenticated;
 revoke delete on public.correction_requests from authenticated;
 grant usage, select on sequence public.correction_requests_id_seq to authenticated;
 
+-- Include request submission and CEO review in the same immutable audit history.
+drop trigger if exists raysis_audit_correction_requests on public.correction_requests;
+create trigger raysis_audit_correction_requests
+after insert or update or delete on public.correction_requests
+for each row execute function public.capture_raysis_audit();
+
 commit;
