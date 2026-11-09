@@ -257,7 +257,7 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 </section>
 <section id="corrections" class="page">
 <h1>Correction requests</h1><p class="sub">Staff submit correction requests; the CEO reviews them.</p>
-<div class="panel"><div class="formgrid">
+<div class="panel" id="correctionSubmitPanel"><div class="formgrid">
 <div class="field"><label>Record type</label><select id="correctionType"><option value="sale">Sale / job</option><option value="quotation">Quotation</option><option value="stock_movement">Stock movement</option><option value="payment">Payment</option></select></div>
 <div class="field"><label>Record reference</label><input id="correctionRecord" placeholder="Receipt / quotation / record ID"></div>
 <div class="field span3"><label>Reason and requested change</label><textarea id="correctionReason" rows="3"></textarea></div>
@@ -331,7 +331,7 @@ async function login(){
   const user=data.user;const {data:profile,error:pe}=await supabaseClient.from('profiles').select('full_name,role,branch_name').eq('id',user.id).single();if(pe)throw pe;
   if(!profile||!['ceo','branch_user'].includes(profile.role))throw new Error('Your Raysis profile is not configured. Contact the CEO.');
   session={userId:user.id,email:user.email,role:profile.role,branch:profile.role==='ceo'?'All':profile.branch_name,label:profile.full_name||email};
-  $('usersNav').style.display=session.role==='ceo'?'':'none';
+  $('usersNav').style.display=session.role==='ceo'?'':'none';$('correctionSubmitPanel').style.display=session.role==='ceo'?'none':'';
   $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=session.label+' • '+(session.branch==='All'?'All branches':session.branch);
   ['saleBranch','qBranch','stockBranch','usageBranch'].forEach(id=>{if(session.branch!=='All')$(id).value=session.branch;$(id).disabled=session.branch!=='All'});
   $('accessInfo').textContent=session.branch==='All'?'CEO access: Mansa and Chinsali records.':'Branch access: '+session.branch+' records only.';
