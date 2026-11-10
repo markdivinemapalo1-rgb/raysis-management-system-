@@ -352,15 +352,22 @@ async function loadCloudData(){
   supabaseClient.from('stock_movements').select('*').order('movement_date',{ascending:false})
  ]);
  for(const r of [sr,qr,mr])if(r.error)throw r.error;
- db.sales=(sr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,receipt:r.receipt_number,date:r.transaction_date,customer:r.customer_name,phone:r.customer_phone||'',product:r.product_service,total:Number(r.total_amount),paid:Number(r.amount_paid),method:r.payment_method||'Cash',notes:r.notes||'',user:r.recorded_by||'',items:r.items||[],material:r.material_name||'',metres:Number(r.metres_used||0),invoiceNo:r.invoice_number||'INV-'+String(r.id).slice(-7),deliveryNo:r.delivery_note_number||'DN-'+String(r.id).slice(-7),quoteId:r.quotation_id,quoteNumber:r.quotation_number,cloudSaved:true}));
- db.quotes=(qr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,number:r.quotation_number,date:r.quotation_date,customer:r.customer_name,contact:r.customer_contact||'',validity:Number(r.validity_days||14),items:r.items||[],terms:r.terms||'',total:Number(r.total_amount),user:r.recorded_by||'',convertedSaleId:r.accepted_sale_id,acceptedDate:r.accepted_date,cloudSaved:true}));
- db.stockMovements=(mr.data||[]).map(r=>({id:Number(r.id),branch:r.branch_name,material:r.material_name,metres:Number(r.quantity_metres),type:r.movement_type,date:r.movement_date,reason:r.reason||'',user:r.recorded_by||'',cloudSaved:true}));
- // Restore only records explicitly marked as not yet accepted by the cloud.
+ db.sales=(sr.data||[]).map(r=>({id:Number(r.id),clientOperationId:r.client_operation_id||null,branch:r.branch_name,receipt:r.receipt_number,date:r.transaction_date,customer:r.customer_name,phone:r.customer_phone||'',product:r.product_service,total:Number(r.total_amount),paid:Number(r.amount_paid),method:r.payment_method||'Cash',notes:r.notes||'',user:r.recorded_by||'',items:r.items||[],material:r.material_name||'',metres:Number(r.metres_used||0),invoiceNo:r.invoice_number||'INV-'+String(r.id).slice(-7),deliveryNo:r.delivery_note_number||'DN-'+String(r.id).slice(-7),quoteId:r.quotation_id,quoteNumber:r.quotation_number,cloudSaved:true}));
+ db.quotes=(qr.data||[]).map(r=>({id:Number(r.id),clientOperationId:r.client_operation_id||null,branch:r.branch_name,number:r.quotation_number,date:r.quotation_date,customer:r.customer_name,contact:r.customer_contact||'',validity:Number(r.validity_days||14),items:r.items||[],terms:r.terms||'',total:Number(r.total_amount),user:r.recorded_by||'',convertedSaleId:r.accepted_sale_id,acceptedDate:r.accepted_date,cloudSaved:true}));
+ db.stockMovements=(mr.data||[]).map(r=>({id:Number(r.id),clientOperationId:r.client_operation_id||null,branch:r.branch_name,material:r.material_name,metres:Number(r.quantity_metres),type:r.movement_type,date:r.movement_date,reason:r.reason||'',user:r.recorded_by||'',cloudSaved:true}));
+ // Restore pending local writes only when their operation UUID is not already present in cloud data.
+ // This avoids showing the same record twice if cloud insertion succeeded just before the browser closed.
  try{
   const local=JSON.parse(localStorage.getItem(KEY)||'{}');
-  db.sales.push(...(Array.isArray(local.sales)?local.sales.filter(x=>x.cloudSaved===false):[]));
-  db.quotes.push(...(Array.isArray(local.quotes)?local.quotes.filter(x=>x.cloudSaved===false):[]));
-  db.stockMovements.push(...(Array.isArray(local.stockMovements)?local.stockMovements.filter(x=>x.cloudSaved===false):[]));
+  const appendUnconfirmed=(cloudRows,localRows)=>{
+   const known=new Set(cloudRows.map(x=>x.clientOperationId).filter(Boolean));
+   return (Array.isArray(localRows)?localRows:[]).filter(x=>
+    x.cloudSaved===false&&(!x.clientOperationId||!known.has(x.clientOperationId))
+   );
+  };
+  db.sales.push(...appendUnconfirmed(db.sales,local.sales));
+  db.quotes.push(...appendUnconfirmed(db.quotes,local.quotes));
+  db.stockMovements.push(...appendUnconfirmed(db.stockMovements,local.stockMovements));
  }catch(e){console.warn('Pending offline queue could not be restored',e);}
  // Supabase is authoritative after login. Never replace freshly loaded cloud records with a stale browser snapshot.
  // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
