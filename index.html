@@ -311,13 +311,13 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <script>
 const KEY='raysis_v2_data_1', CFG='raysis_supabase_config_v1';
 const PROJECT_URL='https://vrstuxentgssrmndcslh.supabase.co';
-let db={sales:[],quotes:[],audit:[],stockMovements:[]},session=null,lastQuote=null,supabaseClient=null,syncQueue=Promise.resolve(),cloudReady=false;
+let db={sales:[],quotes:[],audit:[],stockMovements:[]},session=null,lastQuote=null,supabaseClient=null,syncQueue=Promise.resolve(),cloudReady=false,cloudReachable=null,connectivityTimer=null;
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().slice(0,10);
 const money=n=>'K'+(Number(n)||0).toLocaleString('en-ZM',{minimumFractionDigits:2,maximumFractionDigits:2});
 function loadLocal(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&Array.isArray(x.sales))db={sales:x.sales,quotes:x.quotes||[],audit:x.audit||[],stockMovements:x.stockMovements||[]}}catch(e){}}
 function persist(){localStorage.setItem(KEY,JSON.stringify(db));if(cloudReady)queueCloudSync()}
-function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){if(!navigator.onLine){msg='Cloud: offline';ok=false;}el.textContent=msg;el.className='tag '+(ok?'paid':'')}}
+function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){el.textContent=msg;el.className='tag '+(ok?'paid':'')}}
 function getConfig(){let c={};try{c=JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){};return c}
 function saveConfig(key){localStorage.setItem(CFG,JSON.stringify({url:PROJECT_URL,key}));}
 async function activateSession(user){
@@ -332,7 +332,7 @@ async function activateSession(user){
  $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=session.label+' • '+(session.branch==='All'?'All branches':session.branch);
  ['saleBranch','qBranch','stockBranch','usageBranch'].forEach(id=>{if(session.branch!=='All')$(id).value=session.branch;$(id).disabled=session.branch!=='All'});
  $('accessInfo').textContent=session.branch==='All'?'CEO access: Mansa and Chinsali records.':'Branch access: '+session.branch+' records only.';
- await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);queueCloudSync();init();
+ await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);queueCloudSync();startConnectivityMonitor();init();
 }
 async function login(){
  const email=$('loginEmail').value.trim(),password=$('loginPassword').value,key=$('publishableKey').value.trim()||getConfig().key;
@@ -393,8 +393,28 @@ async function loadCloudData(){
  // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
 }
 function queueCloudSync(){syncQueue=syncQueue.then(()=>syncCloudData()).catch(e=>{console.error(e);setCloudStatus('Cloud sync error');});}
-window.addEventListener('offline',()=>setCloudStatus('Cloud: offline'));
- window.addEventListener('online',()=>{setCloudStatus(cloudReady?'Cloud: reconnecting…':'Cloud: online — sign in required');if(cloudReady)queueCloudSync();});
+async function checkCloudConnectivity(){
+  if(!supabaseClient)return false;
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),7000);
+  try{
+   // Any HTTP response (including 401) proves the Supabase endpoint is reachable.
+   await fetch(PROJECT_URL+'/auth/v1/health',{method:'GET',cache:'no-store',signal:controller.signal});
+   const wasReachable=cloudReachable;cloudReachable=true;
+   if(cloudReady&&wasReachable===false){setCloudStatus('Cloud: reconnecting…');queueCloudSync();}
+   return true;
+  }catch(e){
+   cloudReachable=false;
+   if(cloudReady)setCloudStatus('Cloud: offline');
+   return false;
+  }finally{clearTimeout(timeout);}
+ }
+ function startConnectivityMonitor(){
+  if(connectivityTimer)clearInterval(connectivityTimer);
+  checkCloudConnectivity();
+  connectivityTimer=setInterval(checkCloudConnectivity,15000);
+ }
+ window.addEventListener('offline',()=>{cloudReachable=false;if(cloudReady)setCloudStatus('Cloud: offline');});
+ window.addEventListener('online',()=>{if(cloudReady)setCloudStatus('Cloud: checking connection…');checkCloudConnectivity();});
 async function insertOnce(table,row,operationId){
  const payload={...row,client_operation_id:operationId};
  let result=await supabaseClient.from(table).insert(payload).select('*').single();
