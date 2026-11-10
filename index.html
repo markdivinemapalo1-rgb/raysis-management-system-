@@ -400,7 +400,11 @@ async function checkCloudConnectivity(){
    // Any HTTP response (including 401) proves the Supabase endpoint is reachable.
    await fetch(PROJECT_URL+'/auth/v1/health',{method:'GET',headers:{apikey:getConfig().key||''},cache:'no-store',signal:controller.signal});
    const wasReachable=cloudReachable;cloudReachable=true;
-   if(cloudReady&&wasReachable===false){setCloudStatus('Cloud: reconnecting…');queueCloudSync();}
+   const statusText=$('cloudStatus')?.textContent||'';
+   if(cloudReady&&(wasReachable===false||statusText.includes('checking connection')||statusText.includes('offline'))){
+    setCloudStatus('Cloud: connected');
+    queueCloudSync();
+   }
    return true;
   }catch(e){
    cloudReachable=false;
