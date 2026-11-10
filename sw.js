@@ -1,4 +1,4 @@
-const CACHE_NAME = "raysis-v2-pwa-upgrade-20261109";
+const CACHE_NAME = "raysis-v2-pwa-upgrade-20261110-connectivity1";
 const APP_SHELL = [
   "./",
   "./index.html",
