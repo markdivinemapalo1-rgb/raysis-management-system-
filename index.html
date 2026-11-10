@@ -320,6 +320,20 @@ function persist(){localStorage.setItem(KEY,JSON.stringify(db));if(cloudReady)qu
 function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){el.textContent=msg;el.className='tag '+(ok?'paid':'')}}
 function getConfig(){let c={};try{c=JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){};return c}
 function saveConfig(key){localStorage.setItem(CFG,JSON.stringify({url:PROJECT_URL,key}));}
+async function activateSession(user){
+ const email=user.email||'';
+ const {data:profile,error:pe}=await supabaseClient.from('profiles').select('full_name,role,branch_name').eq('id',user.id).single();if(pe)throw pe;
+ if(!profile||!['ceo','branch_user'].includes(profile.role))throw new Error('Your Raysis profile is not configured. Contact the CEO.');
+ session={userId:user.id,email,role:profile.role,branch:profile.role==='ceo'?'All':profile.branch_name,label:profile.full_name||email};
+ $('usersNav').style.display=session.role==='ceo'?'':'none';$('correctionSubmitPanel').style.display=session.role==='ceo'?'none':'';
+ document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('dashboard').classList.add('active');
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page==='dashboard'));
+ $('usersTable').innerHTML='';
+ $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=session.label+' • '+(session.branch==='All'?'All branches':session.branch);
+ ['saleBranch','qBranch','stockBranch','usageBranch'].forEach(id=>{if(session.branch!=='All')$(id).value=session.branch;$(id).disabled=session.branch!=='All'});
+ $('accessInfo').textContent=session.branch==='All'?'CEO access: Mansa and Chinsali records.':'Branch access: '+session.branch+' records only.';
+ await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);queueCloudSync();init();
+}
 async function login(){
  const email=$('loginEmail').value.trim(),password=$('loginPassword').value,key=$('publishableKey').value.trim()||getConfig().key;
  if(!email||!password){$('loginMessage').textContent='Enter your email and password.';return}
@@ -328,20 +342,26 @@ async function login(){
  try{
   saveConfig(key);supabaseClient=window.supabase.createClient(PROJECT_URL,key);
   const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});if(error)throw error;
-  const user=data.user;const {data:profile,error:pe}=await supabaseClient.from('profiles').select('full_name,role,branch_name').eq('id',user.id).single();if(pe)throw pe;
-  if(!profile||!['ceo','branch_user'].includes(profile.role))throw new Error('Your Raysis profile is not configured. Contact the CEO.');
-  session={userId:user.id,email:user.email,role:profile.role,branch:profile.role==='ceo'?'All':profile.branch_name,label:profile.full_name||email};
-  $('usersNav').style.display=session.role==='ceo'?'':'none';$('correctionSubmitPanel').style.display=session.role==='ceo'?'none':'';
-  $('usersNav').style.display=session.role==='ceo'?'':'none';
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('dashboard').classList.add('active');
-  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page==='dashboard'));
-  $('usersTable').innerHTML='';
-  $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');$('userLabel').textContent=session.label+' • '+(session.branch==='All'?'All branches':session.branch);
-  ['saleBranch','qBranch','stockBranch','usageBranch'].forEach(id=>{if(session.branch!=='All')$(id).value=session.branch;$(id).disabled=session.branch!=='All'});
-  $('accessInfo').textContent=session.branch==='All'?'CEO access: Mansa and Chinsali records.':'Branch access: '+session.branch+' records only.';
-  await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);queueCloudSync();init();
- }catch(e){console.error(e);$('loginMessage').textContent='Sign-in/connection failed: '+(e.message||'Please check your details and try again.');if(supabaseClient)await supabaseClient.auth.signOut().catch(()=>{});}
+  await activateSession(data.user);
+ }catch(e){console.error(e);$('loginMessage').textContent='Sign-in/connection failed: '+(e.message||'Please check your details and try again.');}
  finally{$('signInButton').disabled=false}
+}
+async function restoreSession(){
+ const key=getConfig().key;
+ if(!key||!key.startsWith('sb_publishable_'))return;
+ try{
+  supabaseClient=window.supabase.createClient(PROJECT_URL,key);
+  const {data,error}=await supabaseClient.auth.getSession();if(error)throw error;
+  if(data.session&&data.session.user){
+   $('loginMessage').textContent='Restoring your secure Raysis session…';
+   await activateSession(data.session.user);
+  }
+ }catch(e){
+  console.error('Raysis session restore failed:',e);
+  session=null;cloudReady=false;
+  $('loginScreen').classList.remove('hidden');$('app').classList.add('hidden');
+  $('loginMessage').textContent='Please sign in again. Session could not be restored: '+(e.message||'connection issue');
+ }
 }
 async function logout(){cloudReady=false;if(supabaseClient)await supabaseClient.auth.signOut();session=null;document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('dashboard').classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page==='dashboard'));$('usersNav').style.display='none';$('usersTable').innerHTML='';$('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('loginPassword').value='';$('loginMessage').textContent='Signed out. Your records remain safely stored in Supabase.'}
 async function loadCloudData(){
@@ -606,6 +626,7 @@ function importBackup(e){const f=e.target.files[0];if(!f)return;const r=new File
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 loadLocal();
 const savedCfg=getConfig();if(savedCfg.key)$('publishableKey').value=savedCfg.key;
+restoreSession();
 </script>
 
 <script>
