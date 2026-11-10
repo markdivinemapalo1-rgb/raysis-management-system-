@@ -317,7 +317,7 @@ const today=()=>new Date().toISOString().slice(0,10);
 const money=n=>'K'+(Number(n)||0).toLocaleString('en-ZM',{minimumFractionDigits:2,maximumFractionDigits:2});
 function loadLocal(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&Array.isArray(x.sales))db={sales:x.sales,quotes:x.quotes||[],audit:x.audit||[],stockMovements:x.stockMovements||[]}}catch(e){}}
 function persist(){localStorage.setItem(KEY,JSON.stringify(db));if(cloudReady)queueCloudSync()}
-function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){el.textContent=msg;el.className='tag '+(ok?'paid':'')}}
+function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){if(!navigator.onLine){msg='Cloud: offline';ok=false;}el.textContent=msg;el.className='tag '+(ok?'paid':'')}}
 function getConfig(){let c={};try{c=JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){};return c}
 function saveConfig(key){localStorage.setItem(CFG,JSON.stringify({url:PROJECT_URL,key}));}
 async function activateSession(user){
@@ -393,7 +393,8 @@ async function loadCloudData(){
  // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
 }
 function queueCloudSync(){syncQueue=syncQueue.then(()=>syncCloudData()).catch(e=>{console.error(e);setCloudStatus('Cloud sync error');});}
-window.addEventListener('online',()=>{if(cloudReady)queueCloudSync();});
+window.addEventListener('offline',()=>setCloudStatus('Cloud: offline'));
+ window.addEventListener('online',()=>{setCloudStatus(cloudReady?'Cloud: reconnecting…':'Cloud: online — sign in required');if(cloudReady)queueCloudSync();});
 async function insertOnce(table,row,operationId){
  const payload={...row,client_operation_id:operationId};
  let result=await supabaseClient.from(table).insert(payload).select('*').single();
