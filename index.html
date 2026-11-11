@@ -450,25 +450,30 @@ async function insertOnce(table,row,operationId){
 }
 async function syncCloudData(){
  if(!cloudReady||!supabaseClient||!session)return;
+ const checkpoint=()=>localStorage.setItem(KEY,JSON.stringify(db));
  const pendingSales=db.sales.filter(s=>!s.cloudSaved&&(session.branch==='All'||s.branch===session.branch));
  const pendingQuotes=db.quotes.filter(q=>!q.cloudSaved&&(session.branch==='All'||q.branch===session.branch));
  const pendingMoves=db.stockMovements.filter(m=>!m.cloudSaved&&(session.branch==='All'||m.branch===session.branch));
+ // Persist each operation UUID BEFORE sending its insert. A reload or interrupted
+ // request will therefore retry with the same idempotency key.
  for(const s of pendingSales){
   if(!s.clientOperationId)s.clientOperationId=crypto.randomUUID();
+  checkpoint();
   const row=await insertOnce('sales',{branch_name:s.branch,receipt_number:s.receipt,transaction_date:s.date,customer_name:s.customer,customer_phone:s.phone||'',product_service:s.product,total_amount:s.total,amount_paid:s.paid,payment_method:s.method||'Cash',notes:s.notes||'',created_by:session.userId,items:s.items||[],material_name:s.material||'',metres_used:Number(s.metres||0),invoice_number:s.invoiceNo||'',delivery_note_number:s.deliveryNo||'',quotation_id:s.quoteId||null,quotation_number:s.quoteNumber||null,recorded_by:s.user||session.label},s.clientOperationId);
-  s.id=Number(row.id);s.cloudSaved=true;
+  s.id=Number(row.id);s.cloudSaved=true;checkpoint();
  }
  for(const q of pendingQuotes){
   if(!q.clientOperationId)q.clientOperationId=crypto.randomUUID();
+  checkpoint();
   const row=await insertOnce('quotations',{branch_name:q.branch,quotation_number:q.number,quotation_date:q.date,customer_name:q.customer,customer_contact:q.contact||'',validity_days:q.validity||14,items:q.items||[],terms:q.terms||'',total_amount:q.total,status:'saved',created_by:session.userId,recorded_by:q.user||session.label},q.clientOperationId);
-  q.id=Number(row.id);q.cloudSaved=true;
+  q.id=Number(row.id);q.cloudSaved=true;checkpoint();
  }
  for(const m of pendingMoves){
   if(!m.clientOperationId)m.clientOperationId=crypto.randomUUID();
+  checkpoint();
   const row=await insertOnce('stock_movements',{branch_name:m.branch,material_name:m.material,movement_type:m.type,quantity_metres:m.metres,movement_date:m.date,reason:m.reason||'',created_by:session.userId,recorded_by:m.user||session.label},m.clientOperationId);
-  m.id=Number(row.id);m.cloudSaved=true;
+  m.id=Number(row.id);m.cloudSaved=true;checkpoint();
  }
- localStorage.setItem(KEY,JSON.stringify(db));
  setCloudStatus('Cloud: synced',true);
 }
 function log(action,detail){db.audit.unshift({id:Date.now()+Math.random(),date:new Date().toLocaleString(),user:session?.label||'System',branch:session?.branch||'All',action,detail});persist()}
@@ -648,40 +653,3 @@ async function loadStaffUsers(){
   const result=await adminCall({action:'list'}),users=result.users||[];
   $('usersTable').innerHTML=users.length?'<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Branch</th><th>Access</th><th>Actions</th></tr></thead><tbody>'+users.map(u=>'<tr><td>'+esc(u.full_name)+'</td><td>'+esc(u.email)+'</td><td>'+esc(u.role)+'</td><td>'+esc(u.branch_name||'All')+'</td><td>'+(u.disabled?'Disabled':'Active')+'</td><td><button class="small secondary" onclick="toggleStaffUser(\''+u.id+'\','+(u.disabled?'true':'false')+')">'+(u.disabled?'Enable':'Disable')+'</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">No profiles found.</div>';
  }catch(e){$('usersTable').textContent='User administration unavailable: '+(e.message||e)+'. Deploy the CEO Edge Function first.';}
-}
-async function createStaffUser(){
- if(session?.role!=='ceo')return;
- const payload={action:'create',full_name:$('newUserName').value.trim(),email:$('newUserEmail').value.trim(),password:$('newUserPassword').value,role:$('newUserRole').value,branch_name:$('newUserBranch').value};
- try{await adminCall(payload);$('newUserName').value='';$('newUserEmail').value='';$('newUserPassword').value='';await loadStaffUsers();alert('Account created. Send the temporary password securely.');}
- catch(e){alert('Account creation failed: '+(e.message||e));}
-}
-async function toggleStaffUser(id,isDisabled){
- if(!confirm((isDisabled?'Enable':'Disable')+' this account?'))return;
- try{await adminCall({action:isDisabled?'enable':'disable',user_id:id});await loadStaffUsers();}
- catch(e){alert('Account status change failed: '+(e.message||e));}
-}
-
-function csv(rows){return rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')}
-function download(name,content,type){const blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
-function downloadStockCSV(){const a=(db.stockMovements||[]).filter(m=>session.branch==='All'||m.branch===session.branch),rows=[['Date','Branch','Material','Movement','Metres','Reason','Recorded by'],...a.map(m=>[m.date,m.branch,m.material,m.type,m.metres,m.reason,m.user])];download('raysis_stock_movements.csv','\\ufeff'+csv(rows),'text/csv;charset=utf-8');log('Stock movements CSV exported',a.length+' rows')}
-function downloadSalesCSV(){const a=visibleSales(),rows=[['Date','Branch','Receipt','Customer','Phone','Product / service','Total','Paid','Balance','Status','Payment method','Recorded by','Notes'],...a.map(s=>[s.date,s.branch,s.receipt,s.customer,s.phone,s.product,s.total,s.paid,s.total-s.paid,paymentStatus(s),s.method,s.user,s.notes])];download('raysis_transactions.csv','\ufeff'+csv(rows),'text/csv;charset=utf-8');log('Transactions CSV exported',a.length+' rows')}
-function exportSearch(){const a=window.searchResults||[];const rows=[['Date','Branch','Receipt','Customer','Phone','Product','Total','Paid','Balance','Status','Recorded by'],...a.map(s=>[s.date,s.branch,s.receipt,s.customer,s.phone,s.product,s.total,s.paid,s.total-s.paid,paymentStatus(s),s.user])];download('raysis_search_results.csv','\ufeff'+csv(rows),'text/csv;charset=utf-8')}
-function downloadBackup(){const data={app:'Raysis Management System V2',version:2,exportedAt:new Date().toISOString(),...db};download('raysis_v2_backup_'+today()+'.json',JSON.stringify(data,null,2),'application/json');log('Full backup exported','JSON backup downloaded')}
-function importBackup(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!Array.isArray(x.sales)||!Array.isArray(x.quotes)||!Array.isArray(x.audit))throw Error('Invalid backup');if(!confirm('Importing replaces current records on this device. Continue?'))return;db={sales:x.sales,quotes:x.quotes,audit:x.audit,stockMovements:x.stockMovements||[]};persist();log('Backup imported','Records restored from '+f.name);renderDashboard();renderSales();renderQuotes();renderSearch();renderAudit();renderInventory();renderPerformance();alert('Backup imported successfully.')}catch(err){alert('Could not import this file. Please select a valid Raysis backup.')}e.target.value=''};r.readAsText(f)}
-function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-loadLocal();
-const savedCfg=getConfig();if(savedCfg.key)$('publishableKey').value=savedCfg.key;
-restoreSession();
-</script>
-
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", function () {
-    navigator.serviceWorker.register("./sw.js").catch(function (error) {
-      console.error("Raysis offline setup failed:", error);
-    });
-  });
-}
-</script>
-</body>
-</html>
