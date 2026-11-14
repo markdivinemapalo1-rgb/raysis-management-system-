@@ -702,3 +702,13 @@ async function loadStaffUsers(){
   const result=await adminCall({action:'list'}),users=result.users||[];
   $('usersTable').innerHTML=users.length?'<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Branch</th><th>Access</th><th>Actions</th></tr></thead><tbody>'+users.map(u=>'<tr><td>'+esc(u.full_name)+'</td><td>'+esc(u.email)+'</td><td>'+esc(u.role)+'</td><td>'+esc(u.branch_name||'All')+'</td><td>'+(u.disabled?'Disabled':'Active')+'</td><td><button class="small secondary" onclick="toggleStaffUser(\''+u.id+'\','+(u.disabled?'true':'false')+')">'+(u.disabled?'Enable':'Disable')+'</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">No profiles found.</div>';
  }catch(e){$('usersTable').textContent='User administration unavailable: '+(e.message||e)+'. Deploy the CEO Edge Function first.';}
+}
+
+// Initialize local records and restore an existing authenticated session.
+loadLocal();
+const savedCfg=getConfig();
+if(savedCfg.key)$('publishableKey').value=savedCfg.key;
+restoreSession();
+</script>
+</body>
+</html>
