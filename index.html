@@ -311,7 +311,7 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <script>
 const KEY='raysis_v2_data_1', CFG='raysis_supabase_config_v1';
 const PROJECT_URL='https://vrstuxentgssrmndcslh.supabase.co';
-let db={sales:[],quotes:[],audit:[],stockMovements:[]},session=null,lastQuote=null,supabaseClient=null,syncQueue=Promise.resolve(),cloudReady=false,cloudReachable=null,connectivityTimer=null,offlineMode=false,reconnecting=false;
+let db={sales:[],quotes:[],audit:[],stockMovements:[]},session=null,lastQuote=null,supabaseClient=null,syncQueue=Promise.resolve(),cloudReady=false,cloudReachable=null,connectivityTimer=null,offlineMode=false,reconnecting=false,syncRetryTimer=null,syncRetryAttempt=0;
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().slice(0,10);
 const money=n=>'K'+(Number(n)||0).toLocaleString('en-ZM',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -402,7 +402,39 @@ async function loadCloudData(){
  // Supabase is authoritative after login. Never replace freshly loaded cloud records with a stale browser snapshot.
  // Local browser storage is retained only as a legacy backup; it is not merged into the live cloud dataset.
 }
-function queueCloudSync(){syncQueue=syncQueue.then(()=>syncCloudData()).catch(e=>{console.error(e);setCloudStatus('Cloud sync error');});}
+function hasPendingCloudWrites(){
+ if(!session)return false;
+ const allowed=s=>session.branch==='All'||s.branch===session.branch;
+ return db.sales.some(s=>!s.cloudSaved&&allowed(s))||
+  db.quotes.some(q=>!q.cloudSaved&&allowed(q))||
+  db.stockMovements.some(m=>!m.cloudSaved&&allowed(m));
+}
+function scheduleCloudRetry(){
+ if(syncRetryTimer||!cloudReady||!hasPendingCloudWrites())return;
+ const delay=Math.min(60000,5000*Math.pow(2,Math.min(syncRetryAttempt,4)));
+ syncRetryAttempt++;
+ syncRetryTimer=setTimeout(async()=>{
+  syncRetryTimer=null;
+  if(!cloudReady||!hasPendingCloudWrites())return;
+  const reachable=await checkCloudConnectivity();
+  if(reachable)queueCloudSync();
+  else scheduleCloudRetry();
+ },delay);
+}
+function queueCloudSync(){
+ syncQueue=syncQueue.then(async()=>{
+  try{
+   await syncCloudData();
+   syncRetryAttempt=0;
+   if(syncRetryTimer){clearTimeout(syncRetryTimer);syncRetryTimer=null;}
+  }catch(e){
+   console.error('Raysis cloud sync failed; pending records retained for retry:',e);
+   setCloudStatus('Cloud sync error');
+   scheduleCloudRetry();
+  }
+ });
+ return syncQueue;
+}
 async function checkCloudConnectivity(){
   if(!supabaseClient)return false;
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),7000);
