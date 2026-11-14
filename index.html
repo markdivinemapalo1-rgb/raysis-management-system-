@@ -313,6 +313,7 @@ const KEY='raysis_v2_data_1', CFG='raysis_supabase_config_v1';
 const PROJECT_URL='https://vrstuxentgssrmndcslh.supabase.co';
 let db={sales:[],quotes:[],audit:[],stockMovements:[]},session=null,lastQuote=null,supabaseClient=null,syncQueue=Promise.resolve(),cloudReady=false,cloudReachable=null,connectivityTimer=null,offlineMode=false,reconnecting=false,syncRetryTimer=null,syncRetryAttempt=0;
 const $=id=>document.getElementById(id);
+const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const today=()=>new Date().toISOString().slice(0,10);
 const money=n=>'K'+(Number(n)||0).toLocaleString('en-ZM',{minimumFractionDigits:2,maximumFractionDigits:2});
 function loadLocal(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&Array.isArray(x.sales))db={sales:x.sales,quotes:x.quotes||[],audit:x.audit||[],stockMovements:x.stockMovements||[]}}catch(e){}}
