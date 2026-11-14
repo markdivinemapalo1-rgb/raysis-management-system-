@@ -321,6 +321,7 @@ function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){el.textCo
 function getConfig(){let c={};try{c=JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){};return c}
 function saveConfig(key){localStorage.setItem(CFG,JSON.stringify({url:PROJECT_URL,key}));}
 async function activateSession(user,allowOffline=false){
+ clearCloudRetry();
  const email=user.email||'';
  let profile=null;
  const {data:remoteProfile,error:pe}=await supabaseClient.from('profiles').select('full_name,role,branch_name').eq('id',user.id).single();
@@ -373,7 +374,18 @@ async function restoreSession(){
   $('loginMessage').textContent='Please sign in again. Session could not be restored: '+(e.message||'connection issue');
  }
 }
-async function logout(){cloudReady=false;offlineMode=false;if(session?.userId)localStorage.removeItem('raysis_profile_'+session.userId);if(supabaseClient)await supabaseClient.auth.signOut();session=null;document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('dashboard').classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page==='dashboard'));$('usersNav').style.display='none';$('usersTable').innerHTML='';$('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('loginPassword').value='';$('loginMessage').textContent='Signed out. Your records remain safely stored in Supabase.'}
+async function logout(){
+ cloudReady=false;offlineMode=false;clearCloudRetry();
+ if(connectivityTimer){clearInterval(connectivityTimer);connectivityTimer=null;}
+ cloudReachable=null;
+ if(session?.userId)localStorage.removeItem('raysis_profile_'+session.userId);
+ if(supabaseClient)await supabaseClient.auth.signOut();
+ session=null;
+ document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+ $('dashboard').classList.add('active');
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page==='dashboard'));
+ $('usersNav').style.display='none';$('usersTable').innerHTML='';$('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('loginPassword').value='';$('loginMessage').textContent='Signed out. Your records remain safely stored in Supabase.';
+}
 async function loadCloudData(){
  setCloudStatus('Cloud: loading…');
  const [sr,qr,mr]=await Promise.all([
@@ -408,6 +420,10 @@ function hasPendingCloudWrites(){
  return db.sales.some(s=>!s.cloudSaved&&allowed(s))||
   db.quotes.some(q=>!q.cloudSaved&&allowed(q))||
   db.stockMovements.some(m=>!m.cloudSaved&&allowed(m));
+}
+function clearCloudRetry(){
+ if(syncRetryTimer){clearTimeout(syncRetryTimer);syncRetryTimer=null;}
+ syncRetryAttempt=0;
 }
 function scheduleCloudRetry(){
  if(syncRetryTimer||!cloudReady||!hasPendingCloudWrites())return;
