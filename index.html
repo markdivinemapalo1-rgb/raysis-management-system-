@@ -552,12 +552,22 @@ async function recordAdditionalPayment(saleId){
   if(raw===null)return;
   const amount=Number(raw);
   if(!Number.isFinite(amount)||amount<=0||amount>balance){alert('Enter an amount greater than zero and not exceeding '+money(balance)+'.');return}
-  const method=prompt('Payment method (e.g. Cash, Airtel Money, Bank Transfer):','Cash');
+  const method=prompt('Payment method (Cash, Airtel Money, Bank Transfer, etc.):','Cash');
   if(method===null)return;
   if(!method.trim()){alert('Payment method is required.');return}
-  const reference=prompt('Payment reference (optional):','');
-  if(reference===null)return;
-  op={saleId:Number(saleId),amount,method:method.trim(),reference:reference.trim(),notes:'Additional payment for '+sale.receipt,clientOperationId:crypto.randomUUID()};
+  let reference='',phone='';
+  if(method.trim().toLowerCase()==='airtel money'){
+   phone=prompt('Enter the customer Airtel Money phone number:','');
+   if(phone===null)return;
+   if(!phone.trim()){alert('Airtel Money customer phone number is required. No payment has been recorded.');return}
+   reference=prompt('Enter the Airtel Money transaction reference supplied by the customer:','');
+   if(reference===null)return;
+   if(!reference.trim()){alert('Airtel Money transaction reference is required. No payment has been recorded.');return}
+  }else{
+   reference=prompt('Payment reference (optional):','');
+   if(reference===null)return;
+  }
+  op={saleId:Number(saleId),amount,method:method.trim(),reference:reference.trim(),notes:'Additional payment for '+sale.receipt+(phone?' • Airtel customer phone: '+phone.trim():''),clientOperationId:crypto.randomUUID()};
   pending.push(op);localStorage.setItem(PENDING_PAYMENTS_KEY,JSON.stringify(pending));
  }
  setCloudStatus('Cloud: recording payment…');
