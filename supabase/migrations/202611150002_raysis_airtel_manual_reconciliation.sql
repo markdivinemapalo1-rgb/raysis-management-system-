@@ -67,9 +67,9 @@ CREATE OR REPLACE FUNCTION public.raysis_record_additional_payment(
   p_amount numeric,
   p_payment_method text,
   p_client_operation_id uuid,
-  p_reference_number text DEFAULT '',
-  p_notes text DEFAULT '',
-  p_customer_phone text DEFAULT ''
+  p_reference_number text,
+  p_notes text,
+  p_customer_phone text
 )
 RETURNS bigint
 LANGUAGE plpgsql
