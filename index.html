@@ -568,13 +568,13 @@ async function recordAdditionalPayment(saleId){
    reference=prompt('Payment reference (optional):','');
    if(reference===null)return;
   }
-  op={saleId:Number(saleId),amount,method:method.trim(),reference:reference.trim(),notes:'Additional payment for '+sale.receipt+(phone?' • Airtel customer phone: '+phone.trim():''),clientOperationId:crypto.randomUUID()};
+  op={saleId:Number(saleId),amount,method:method.trim(),reference:reference.trim(),customerPhone:phone.trim(),notes:'Additional payment for '+sale.receipt,clientOperationId:crypto.randomUUID()};
   pending.push(op);localStorage.setItem(PENDING_PAYMENTS_KEY,JSON.stringify(pending));
  }
  setCloudStatus('Cloud: recording payment…');
  const {data,error}=await supabaseClient.rpc('raysis_record_additional_payment',{
   p_sale_id:op.saleId,p_amount:op.amount,p_payment_method:op.method,
-  p_client_operation_id:op.clientOperationId,p_reference_number:op.reference||'',p_notes:op.notes||''
+  p_client_operation_id:op.clientOperationId,p_reference_number:op.reference||'',p_notes:op.notes||'',p_customer_phone:op.customerPhone||''
  });
  if(error){
   console.error('Additional payment failed; retry key retained:',error);
