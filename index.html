@@ -543,7 +543,8 @@ async function recordAdditionalPayment(saleId){
  if(balance<=0){alert('This sale is already fully paid.');return}
  const identity='CUSTOMER: '+sale.customer+'\nRECEIPT: '+sale.receipt+'\nSALE TOTAL: '+money(sale.total)+'\nALREADY PAID: '+money(sale.paid)+'\nOUTSTANDING: '+money(balance);
  if(!confirm('CONFIRM THE CORRECT SALE BEFORE RECORDING PAYMENT\n\n'+identity+'\n\nContinue with this exact sale?'))return;
- const pending=readPendingPayments();\n let op=pending.find(x=>Number(x.saleId)===Number(saleId));
+ const pending=readPendingPayments();
+ let op=pending.find(x=>Number(x.saleId)===Number(saleId));
  if(op){
   if(!confirm('A payment attempt for '+money(op.amount)+' is still pending for receipt '+sale.receipt+'. Retry the same payment safely?'))return;
  }else{
