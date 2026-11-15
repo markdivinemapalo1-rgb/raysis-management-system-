@@ -541,8 +541,7 @@ async function recordAdditionalPayment(saleId){
  if(!sale||!sale.cloudSaved){alert('This sale is not yet confirmed in the cloud. Sync it before recording an additional payment.');return}
  const balance=Math.max(0,Number(sale.total)-Number(sale.paid));
  if(balance<=0){alert('This sale is already fully paid.');return}
- const pending=readPendingPayments();
- let op=pending.find(x=>Number(x.saleId)===Number(saleId));
+ const identity='CUSTOMER: '+sale.customer+'\nRECEIPT: '+sale.receipt+'\nSALE TOTAL: '+money(sale.total)+'\nALREADY PAID: '+money(sale.paid)+'\nOUTSTANDING: '+money(balance);\n if(!confirm('CONFIRM THE CORRECT SALE BEFORE RECORDING PAYMENT\\n\\n'+identity+'\\n\\nContinue with this exact sale?'))return;\n const pending=readPendingPayments();\n let op=pending.find(x=>Number(x.saleId)===Number(saleId));
  if(op){
   if(!confirm('A payment attempt for '+money(op.amount)+' is still pending for receipt '+sale.receipt+'. Retry the same payment safely?'))return;
  }else{
