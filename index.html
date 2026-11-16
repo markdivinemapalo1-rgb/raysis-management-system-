@@ -98,7 +98,6 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
   <h1 style="margin-top:24px">Secure sign in</h1><p class="sub">Sign in with your assigned Raysis account.</p>
   <div class="field"><label>Email address</label><input id="loginEmail" type="email" autocomplete="username" placeholder="name@example.com"></div>
   <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your account password"></div>
-  <div class="field"><label>Supabase publishable key</label><input id="publishableKey" type="password" autocomplete="off" placeholder="sb_publishable_..."></div>
   <button id="signInButton" style="width:100%;margin-top:8px" onclick="login()">Sign in securely</button>
   <p id="loginMessage" class="muted" style="font-size:12px;margin-top:15px">Cloud connection: awaiting configuration. Enter the publishable key from Supabase API Keys. It is safe for browser use with RLS enabled. Never enter a secret or service_role key.</p>
 </div>
@@ -326,7 +325,8 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-const KEY='raysis_v2_data_1', CFG='raysis_supabase_config_v1';
+const KEY='raysis_v2_data_1';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_ad6r-czuBJm5pmRM7kdAKQ_VHk4SpN4';
 const PROJECT_URL='https://vrstuxentgssrmndcslh.supabase.co';
 let db={sales:[],quotes:[],audit:[],stockMovements:[]},session=null,lastQuote=null,supabaseClient=null,syncQueue=Promise.resolve(),cloudReady=false,cloudReachable=null,connectivityTimer=null,offlineMode=false,reconnecting=false,syncRetryTimer=null,syncRetryAttempt=0;
 const $=id=>document.getElementById(id);
@@ -336,8 +336,6 @@ const money=n=>'K'+(Number(n)||0).toLocaleString('en-ZM',{minimumFractionDigits:
 function loadLocal(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&Array.isArray(x.sales))db={sales:x.sales,quotes:x.quotes||[],audit:x.audit||[],stockMovements:x.stockMovements||[]}}catch(e){}}
 function persist(){localStorage.setItem(KEY,JSON.stringify(db));if(cloudReady)queueCloudSync()}
 function setCloudStatus(msg,ok=false){const el=$('cloudStatus');if(el){el.textContent=msg;el.className='tag '+(ok?'paid':'')}}
-function getConfig(){let c={};try{c=JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){};return c}
-function saveConfig(key){localStorage.setItem(CFG,JSON.stringify({url:PROJECT_URL,key}));}
 async function activateSession(user,allowOffline=false){
  clearCloudRetry();
  const email=user.email||'';
@@ -364,19 +362,19 @@ async function activateSession(user,allowOffline=false){
  await loadCloudData();cloudReady=true;setCloudStatus('Cloud: connected',true);queueCloudSync();startConnectivityMonitor();init();
 }
 async function login(){
- const email=$('loginEmail').value.trim(),password=$('loginPassword').value,key=$('publishableKey').value.trim()||getConfig().key;
+ const email=$('loginEmail').value.trim(),password=$('loginPassword').value,key=SUPABASE_PUBLISHABLE_KEY;
  if(!email||!password){$('loginMessage').textContent='Enter your email and password.';return}
  if(!key||!key.startsWith('sb_publishable_')){$('loginMessage').textContent='Enter the Supabase publishable key (starts with sb_publishable_). Do not use a secret key.';return}
  $('signInButton').disabled=true;$('loginMessage').textContent='Connecting securely to Raysis cloud…';
  try{
-  saveConfig(key);supabaseClient=window.supabase.createClient(PROJECT_URL,key);
+  supabaseClient=window.supabase.createClient(PROJECT_URL,key);
   const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});if(error)throw error;
   await activateSession(data.user);
  }catch(e){console.error(e);$('loginMessage').textContent='Sign-in/connection failed: '+(e.message||'Please check your details and try again.');}
  finally{$('signInButton').disabled=false}
 }
 async function restoreSession(){
- const key=getConfig().key;
+ const key=SUPABASE_PUBLISHABLE_KEY;
  if(!key||!key.startsWith('sb_publishable_'))return;
  try{
   supabaseClient=window.supabase.createClient(PROJECT_URL,key);
@@ -474,7 +472,7 @@ async function checkCloudConnectivity(){
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),7000);
   try{
    // Any HTTP response (including 401) proves the Supabase endpoint is reachable.
-   await fetch(PROJECT_URL+'/auth/v1/health',{method:'GET',headers:{apikey:getConfig().key||''},cache:'no-store',signal:controller.signal});
+   await fetch(PROJECT_URL+'/auth/v1/health',{method:'GET',headers:{apikey:SUPABASE_PUBLISHABLE_KEY},cache:'no-store',signal:controller.signal});
    const wasReachable=cloudReachable;cloudReachable=true;
    const statusText=$('cloudStatus')?.textContent||'';
    if(offlineMode&&!reconnecting){
@@ -918,8 +916,6 @@ async function loadStaffUsers(){
 
 // Initialize local records and restore an existing authenticated session.
 loadLocal();
-const savedCfg=getConfig();
-if(savedCfg.key)$('publishableKey').value=savedCfg.key;
 restoreSession();
 </script>
 </body>
