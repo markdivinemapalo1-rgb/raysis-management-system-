@@ -228,14 +228,14 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
   <div class="actions"><button onclick="recordStockUsage()">Record material usage</button></div>
 </div>
 <div class="panel">
-  <div class="panel-head"><h2>Current stock by branch</h2><button class="small secondary" onclick="renderInventory()">Refresh stock</button></div>
+  <div class="panel-head"><h2>Current stock by branch</h2><button class="small secondary" onclick="refreshInventory()">Refresh stock</button></div>
   <div id="inventoryTable" class="tablewrap"></div>
 </div>
 <div class="panel">
   <div class="panel-head"><h2>Stock movement history</h2><button class="small secondary" onclick="downloadStockCSV()">Export stock CSV</button></div>
   <div id="stockMovementTable" class="tablewrap"></div>
 </div>
-<div class="note">Inventory movements are stored in Supabase and branch access is enforced by database policies. Cross-device stock sharing still requires the cloud database integration.</div>
+<div class="note">Stock balances are independent for Mansa and Chinsali. Inventory movements are stored in Supabase. Branch users see their own branch; the CEO can view both branches separately. Use Refresh stock to retrieve the latest permitted cloud movements.</div>
 </section>
 
 <section id="search" class="page">
@@ -694,6 +694,49 @@ function recordStockUsage(){
   log('Material used',branch+' • '+material+' • '+metres.toFixed(2)+' m • '+(reason||'Manual usage'));persist();
   $('usageMaterial').value='';$('usageMetres').value='';$('usageReason').value='';renderInventory();renderPerformance();alert('Material usage recorded and deducted from branch stock.');
 }
+async function refreshInventory(){
+  if(!session||!supabaseClient||!cloudReady){
+    alert('Connect to Raysis cloud before refreshing stock. Your locally pending stock movements will remain saved.');
+    return;
+  }
+  const button=document.querySelector('#inventory .panel-head button[onclick="refreshInventory()"]');
+  if(button){button.disabled=true;button.textContent='Refreshing…';}
+  try{
+    const {data,error}=await supabaseClient.from('stock_movements').select('*').order('movement_date',{ascending:false}).order('created_at',{ascending:false});
+    if(error)throw error;
+    const cloudRows=(data||[]).map(r=>({
+      id:Number(r.id),
+      clientOperationId:r.client_operation_id||null,
+      branch:r.branch_name,
+      material:r.material_name,
+      metres:Number(r.quantity_metres),
+      type:r.movement_type,
+      date:r.movement_date,
+      reason:r.reason||'',
+      user:r.recorded_by||'',
+      cloudSaved:true
+    }));
+    const pending=(db.stockMovements||[]).filter(m=>
+      m.cloudSaved===false&&
+      (session.branch==='All'||m.branch===session.branch)&&
+      !cloudRows.some(c=>c.clientOperationId&&c.clientOperationId===m.clientOperationId)
+    );
+    db.stockMovements=[...cloudRows,...pending];
+    localStorage.setItem(KEY,JSON.stringify(db));
+    renderInventory();
+    renderPerformance();
+    setCloudStatus('Cloud: stock refreshed',true);
+    if(pending.length)queueCloudSync();
+    alert('Stock refreshed from Supabase. Mansa and Chinsali balances remain separate.');
+  }catch(e){
+    console.error('Raysis stock refresh failed:',e);
+    setCloudStatus('Cloud: stock refresh failed');
+    alert('Stock could not be refreshed from the cloud: '+(e.message||'connection issue')+'. Existing records have been kept.');
+  }finally{
+    if(button){button.disabled=false;button.textContent='Refresh stock';}
+  }
+}
+
 function renderInventory(){
   if(!session)return;
   const branches=session.branch==='All'?['Mansa','Chinsali']:[session.branch],keys={};
