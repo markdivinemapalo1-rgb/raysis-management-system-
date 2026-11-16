@@ -764,13 +764,34 @@ async function acceptQuotation(quoteId){
  const paidText=prompt('Quotation total: '+money(q.total)+'\\nEnter amount received now (enter 0 if no payment has been received):','0');
  if(paidText===null)return;const paid=Number(paidText);
  if(!Number.isFinite(paid)||paid<0||paid>q.total){alert('Enter a valid payment between K0 and the quotation total.');return;}
+ let method=null,reference='',customerPhone='';
+ if(paid>0){
+  const methodText=prompt('Select payment method by typing one of these exact options:\\nCash\\nAirtel Money\\nMobile Money\\nBank transfer\\nOther','Cash');
+  if(methodText===null)return;
+  const allowed=['Cash','Airtel Money','Mobile Money','Bank transfer','Other'];
+  method=allowed.find(x=>x.toLowerCase()===methodText.trim().toLowerCase())||null;
+  if(!method){alert('Choose Cash, Airtel Money, Mobile Money, Bank transfer or Other.');return;}
+  if(method==='Airtel Money'){
+   reference=prompt('Enter the Airtel Money transaction reference:','');
+   if(reference===null)return;
+   reference=reference.trim();
+   if(!reference){alert('Airtel Money reference is required. No sale has been created.');return;}
+   customerPhone=prompt('Enter the customer phone number used for this Airtel Money payment:','');
+   if(customerPhone===null)return;
+   customerPhone=customerPhone.trim();
+   if(!customerPhone){alert('Customer phone number is required for Airtel Money. No sale has been created.');return;}
+  }
+ }
  try{
   if(!q.cloudSaved)await syncCloudData();
   const receipt='RYS-'+q.branch.slice(0,1).toUpperCase()+'-'+Date.now().toString().slice(-7);
-  const {data:saleId,error}=await supabaseClient.rpc('convert_quotation_to_sale',{p_quote_id:Number(q.id),p_paid:paid,p_receipt_number:receipt});
+  const {data:saleId,error}=await supabaseClient.rpc('convert_quotation_to_sale',{
+   p_quote_id:Number(q.id),p_paid:paid,p_receipt_number:receipt,
+   p_payment_method:method,p_payment_reference:reference,p_customer_phone:customerPhone
+  });
   if(error)throw error;
   const items=(q.items||[]).map(i=>({description:i.description,qty:Number(i.qty)||1,price:Number(i.price)||0}));
-  const sale={id:Number(saleId),cloudSaved:true,branch:q.branch,receipt,date:today(),customer:q.customer,phone:q.contact||'',product:items.map(i=>i.description).join(', '),items,total:Number(q.total)||0,paid,method:'Cash',notes:'Created from accepted quotation '+q.number,user:session.label,quoteId:q.id,quoteNumber:q.number,invoiceNo:'INV-'+q.branch.slice(0,1).toUpperCase()+'-'+receipt.slice(-7),deliveryNo:'DN-'+q.branch.slice(0,1).toUpperCase()+'-'+receipt.slice(-7)};
+  const sale={id:Number(saleId),cloudSaved:true,branch:q.branch,receipt,date:today(),customer:q.customer,phone:method==='Airtel Money'?customerPhone:(q.contact||''),product:items.map(i=>i.description).join(', '),items,total:Number(q.total)||0,paid,method:method||(paid===0?'Not paid':'Not recorded'),paymentReference:reference,notes:'Created from accepted quotation '+q.number,user:session.label,quoteId:q.id,quoteNumber:q.number,invoiceNo:'INV-'+q.branch.slice(0,1).toUpperCase()+'-'+receipt.slice(-7),deliveryNo:'DN-'+q.branch.slice(0,1).toUpperCase()+'-'+receipt.slice(-7)};
   db.sales.unshift(sale);q.convertedSaleId=Number(saleId);q.acceptedDate=sale.date;q.cloudSaved=true;
   persist();renderQuotes();renderSales();renderDashboard();renderSearch();
   if(confirm('Sale created successfully. Download the invoice PDF now?'))downloadSaleDocument(sale.id,'invoice');
