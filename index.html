@@ -113,6 +113,7 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <button data-page="inventory" onclick="showPage('inventory',this)">Stock inventory</button>
 
 <button data-page="search" onclick="showPage('search',this)">Search & tracking</button>
+<button data-page="airtel" onclick="showPage('airtel',this)">Airtel reconciliation</button>
 <button data-page="audit" onclick="showPage('audit',this)">Audit trail</button>
 <button data-page="corrections" onclick="showPage(&quot;corrections&quot;,this)">Correction requests</button>
 <button id="usersNav" data-page="users" onclick="showPage(&quot;users&quot;,this)">User administration</button>
@@ -251,6 +252,21 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 <input id="fUser" placeholder="Recorded by">
 </div><div class="actions"><button onclick="renderSearch()">Search records</button><button class="secondary" onclick="clearFilters()">Clear filters</button><button class="secondary" onclick="exportSearch()">Export results CSV</button></div>
 </div><div class="panel"><div class="panel-head"><h2>Search results</h2><span id="resultCount" class="muted"></span></div><div id="searchTable" class="tablewrap"></div></div>
+</section>
+<section id="airtel" class="page">
+<h1>Airtel Money Reconciliation Centre</h1>
+<p class="sub">Compare customer-provided references against the official Airtel Money statement. A reference alone is not proof of receipt.</p>
+<div class="note">Only mark a payment Verified after matching the transaction on the Airtel Money statement. Use Disputed when the amount, phone, reference or receipt does not match.</div>
+<div class="grid">
+<div class="stat"><div class="label">Unverified payments</div><div class="num" id="airtelUnverified">0</div></div>
+<div class="stat"><div class="label">Verified payments</div><div class="num" id="airtelVerified">0</div></div>
+<div class="stat"><div class="label">Disputed payments</div><div class="num" id="airtelDisputed">0</div></div>
+<div class="stat"><div class="label">Verified value</div><div class="num" id="airtelVerifiedValue">K0.00</div></div>
+</div>
+<div class="panel">
+<div class="panel-head"><h2>Airtel payment records</h2><button class="small secondary" onclick="loadAirtelReconciliation()">Refresh list</button></div>
+<div id="airtelReconciliationTable" class="tablewrap"><div class="empty">Open this section to load Airtel payments.</div></div>
+</div>
 </section>
 <section id="audit" class="page">
 <h1>Audit trail</h1><p class="sub">A record of transactions, quotations and backup actions captured in this browser.</p>
@@ -527,10 +543,42 @@ async function syncCloudData(){
  if(hasPendingCloudWrites())throw new Error('Some records are still pending cloud upload.');
  setCloudStatus('Cloud: synced',true);
 }
+const airtelStatusLabel=status=>status==='verified'?'Verified':status==='disputed'?'Disputed':'Unverified';
+async function loadAirtelReconciliation(){
+ if(!session||!supabaseClient)return;
+ const host=$('airtelReconciliationTable');host.innerHTML='<div class="empty">Loading Airtel payments…</div>';
+ const {data,error}=await supabaseClient.rpc('raysis_list_airtel_reconciliation');
+ if(error){host.innerHTML='<div class="empty">Could not load reconciliation records: '+esc(error.message)+'</div>';return;}
+ const rows=data||[];
+ const counts={unverified:0,verified:0,disputed:0},verifiedValue=rows.filter(x=>x.reconciliation_status==='verified').reduce((n,x)=>n+Number(x.amount||0),0);
+ rows.forEach(x=>counts[x.reconciliation_status]=(counts[x.reconciliation_status]||0)+1);
+ $('airtelUnverified').textContent=counts.unverified||0;
+ $('airtelVerified').textContent=counts.verified||0;
+ $('airtelDisputed').textContent=counts.disputed||0;
+ $('airtelVerifiedValue').textContent=money(verifiedValue);
+ if(!rows.length){host.innerHTML='<div class="empty">No Airtel Money payments found for your permitted branch.</div>';return;}
+ host.innerHTML='<table><thead><tr><th>Receipt / date</th><th>Branch</th><th>Customer / phone</th><th>Amount</th><th>Airtel reference</th><th>Status</th><th>Verification note</th><th>Action</th></tr></thead><tbody>'+rows.map(x=>{
+  const status=x.reconciliation_status||'unverified',tagClass=status==='verified'?'paid':status==='disputed'?'unpaid':'partial';
+  const actions=status==='verified'?'<button class="small secondary" onclick="setAirtelReconciliation('+Number(x.payment_id)+',\'unverified\')">Reopen</button>':'<button class="small" onclick="setAirtelReconciliation('+Number(x.payment_id)+',\'verified\')">Verify</button> <button class="small warn" onclick="setAirtelReconciliation('+Number(x.payment_id)+',\'disputed\')">Dispute</button>';
+  return '<tr><td><b>'+esc(x.receipt_number)+'</b><div class="muted">'+esc(x.transaction_date||'')+' • Payment #'+Number(x.payment_id)+'</div></td><td>'+esc(x.branch_name)+'</td><td>'+esc(x.customer_name)+'<div class="muted">'+esc(x.customer_phone||'')+'</div></td><td>'+money(x.amount)+'</td><td>'+esc(x.reference_number||'')+'</td><td><span class="tag '+tagClass+'">'+airtelStatusLabel(status)+'</span>'+(x.verified_at?'<div class="muted">Verified: '+esc(new Date(x.verified_at).toLocaleString())+'</div>':'')+'</td><td>'+esc(x.verification_note||'—')+'</td><td>'+actions+'</td></tr>';
+ }).join('')+'</tbody></table>';
+}
+async function setAirtelReconciliation(paymentId,status){
+ if(!session)return;
+ if(status==='verified'&&!confirm('Confirm you matched the amount, phone and transaction reference against the official Airtel Money statement.\\n\\nMark this Airtel payment as VERIFIED?'))return;
+ let note='';
+ if(status==='disputed'){note=prompt('Explain why this payment is disputed:','');if(note===null)return;if(!note.trim()){alert('A reason is required for a disputed payment.');return;}}
+ if(status==='unverified'&&!confirm('Reopen this payment and remove its verification?'))return;
+ const {error}=await supabaseClient.rpc('raysis_set_airtel_reconciliation',{p_payment_id:paymentId,p_status:status,p_note:note});
+ if(error){alert('Could not update reconciliation status: '+error.message);return;}
+ await loadAirtelReconciliation();
+ alert('Airtel payment status updated to '+airtelStatusLabel(status)+'.');
+}
+
 function log(action,detail){db.audit.unshift({id:Date.now()+Math.random(),date:new Date().toLocaleString(),user:session?.label||'System',branch:session?.branch||'All',action,detail});persist()}
 function visibleSales(){return db.sales.filter(s=>session.branch==='All'||s.branch===session.branch)}
 function visibleQuotes(){return db.quotes.filter(q=>session.branch==='All'||q.branch===session.branch)}
-function showPage(id,btn){if(!session)return;if(id==='users'&&session.role!=='ceo'){alert('User administration is restricted to the CEO account.');id='dashboard'}const page=$(id);if(!page||!page.classList.contains('page'))return;document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));page.classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));if(id==='dashboard')renderDashboard();if(id==='sales')renderSales();if(id==='quotations')renderQuotes();if(id==='search')renderSearch();if(id==='audit')renderAudit();if(id==='corrections')loadCorrectionRequests();if(id==='users')loadStaffUsers();if(id==='performance')renderPerformance();if(id==='inventory')renderInventory()}
+function showPage(id,btn){if(!session)return;if(id==='users'&&session.role!=='ceo'){alert('User administration is restricted to the CEO account.');id='dashboard'}const page=$(id);if(!page||!page.classList.contains('page'))return;document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));page.classList.add('active');document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));if(id==='dashboard')renderDashboard();if(id==='sales')renderSales();if(id==='quotations')renderQuotes();if(id==='search')renderSearch();if(id==='audit')renderAudit();if(id==='corrections')loadCorrectionRequests();if(id==='users')loadStaffUsers();if(id==='performance')renderPerformance();if(id==='inventory')renderInventory();if(id==='airtel')loadAirtelReconciliation()}
 function init(){$('saleDate').value=today();$('qDate').value=today();renderDashboard();renderSales();renderQuotes();renderSearch();renderAudit();$('reportDate').value=today();renderPerformance();renderInventory()}
 function paymentStatus(s){return s.paid>=s.total?'Paid':s.paid>0?'Partially paid':'Unpaid'}
 function tag(status){return '<span class="tag '+(status==='Paid'?'paid':status==='Unpaid'?'unpaid':'partial')+'">'+status+'</span>'}
