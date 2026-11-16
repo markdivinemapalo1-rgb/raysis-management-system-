@@ -120,4 +120,6 @@ REVOKE ALL ON FUNCTION public.raysis_set_airtel_reconciliation(bigint,text,text)
 GRANT EXECUTE ON FUNCTION public.raysis_list_airtel_reconciliation() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.raysis_set_airtel_reconciliation(bigint,text,text) TO authenticated;
 
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;
