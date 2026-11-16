@@ -291,8 +291,8 @@ footer{text-align:center;color:#8492a6;font-size:11px;padding:18px}
 </div><div class="actions"><button onclick="createStaffUser()">Create account</button><button class="secondary" onclick="loadStaffUsers()">Refresh users</button></div></div>
 <div class="panel"><h2>Users</h2><div id="usersTable" class="tablewrap"></div></div></section>
 <section id="backup" class="page">
-<h1>Data & backup</h1><p class="sub">Export a backup file regularly. Import a backup to restore or transfer records to another device.</p>
-<div class="panel"><h2>Backup and restore</h2><div class="actions"><button onclick="downloadBackup()">Download full backup (JSON)</button><label class="secondary" style="padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:700">Import backup <input id="backupFile" type="file" accept=".json,application/json" style="display:none" onchange="importBackup(event)"></label><button class="secondary" onclick="downloadSalesCSV()">Export transactions CSV</button></div><p class="muted">Keep backup files in a safe place. Importing a backup replaces the records currently stored in this browser.</p></div>
+<h1>Data & backup</h1><p class="sub">Download a cloud data snapshot regularly. Restore is temporarily disabled until a safe, duplicate-proof recovery process is available.</p>
+<div class="panel"><h2>Backup and restore</h2><div class="actions"><button onclick="downloadBackup()">Download cloud data snapshot (JSON)</button><button class="secondary" onclick="importBackup()">Restore backup (not yet available)</button><button class="secondary" onclick="downloadSalesCSV()">Export transactions CSV</button></div><p class="muted">The JSON snapshot exports cloud records visible to your account. It is an independent data copy, not a complete Supabase database restore. Store it securely. Restore is disabled to prevent accidental overwrites or duplicate financial records.</p></div>
 <div class="panel"><h2>Branch access</h2><p id="accessInfo"></p><div class="note">Accounts use Supabase email/password authentication. Branch access is enforced by Supabase Row Level Security. CEO account administration is available only through the protected CEO Edge Function.</div></div>
 <div class="panel"><h2>System readiness</h2><ul><li>Offline browser storage: available on this device after the page has loaded.</li><li>Branch performance reports: daily, weekly, monthly and yearly sales, collections and balances.</li><li>Stock inventory: separate branch quantities, receipts, material usage and movement history; metres tracked without purchase costs.</li><li>Invoices and delivery notes: accepted quotations can be converted to linked sales, with downloadable PDF documents carrying Raysis business details.</li><li>Cross-device cloud synchronization: connected through Supabase when signed in online.</li><li>Secure email/password authentication and branch permissions: enforced by Supabase Auth and Row Level Security.</li><li>Keep regular JSON backups; cloud database backups depend on your Supabase plan.</li></ul></div>
 </section>
@@ -765,6 +765,43 @@ async function downloadSaleDocument(saleId,kind){
   const footerY=Math.min(280,Math.max(y+18,270));doc.setDrawColor(...gold);doc.setLineWidth(.8);doc.line(14,footerY-7,196,footerY-7);doc.setTextColor(...grey);doc.setFontSize(8);doc.text('Thank you for choosing Raysis Printing House.',105,footerY,{align:'center'});
   const safe=(sale.customer||'customer').replace(/[^a-z0-9-_]+/gi,'_');doc.save((isInvoice?'Raysis_Invoice_':'Raysis_Delivery_Note_')+safe+'_'+docNo+'.pdf');
   log((isInvoice?'Invoice':'Delivery note')+' downloaded',docNo+' • '+sale.customer);persist();
+}
+
+
+async function downloadBackup(){
+ if(!session||!supabaseClient||!cloudReady){alert('Connect and sign in to Raysis cloud before downloading a cloud snapshot.');return;}
+ const button=Array.from(document.querySelectorAll('#backup button')).find(b=>b.textContent.includes('cloud data snapshot'));
+ if(button){button.disabled=true;button.textContent='Preparing snapshot…';}
+ try{
+  const tables=['sales','quotations','stock_movements','payments','audit_logs','correction_requests'];
+  const snapshot={format:'raysis-v2-cloud-data-snapshot',version:1,exported_at:new Date().toISOString(),exported_by:session.label,account_scope:session.branch==='All'?'CEO: all permitted branches':'Branch: '+session.branch,source:'Supabase cloud; rows limited by the signed-in account RLS permissions',tables:{}};
+  for(const table of tables){
+   const rows=[];let from=0,pageSize=1000;
+   while(true){
+    const {data,error}=await supabaseClient.from(table).select('*').order('id',{ascending:true}).range(from,from+pageSize-1);
+    if(error)throw new Error('Could not export '+table+': '+error.message);
+    const batch=data||[];rows.push(...batch);
+    if(batch.length<pageSize)break;
+    from+=pageSize;
+   }
+   snapshot.tables[table]=rows;
+  }
+  snapshot.local_pending={
+   sales:db.sales.filter(x=>!x.cloudSaved),
+   quotations:db.quotes.filter(x=>!x.cloudSaved),
+   stock_movements:db.stockMovements.filter(x=>!x.cloudSaved),
+   additional_payments:(()=>{try{return JSON.parse(localStorage.getItem(PENDING_PAYMENTS_KEY)||'[]')}catch(e){return []}})()
+  };
+  const blob=new Blob([JSON.stringify(snapshot,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='Raysis_V2_Cloud_Snapshot_'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  alert('Cloud data snapshot downloaded. It contains the cloud rows visible to this account and pending local operations. This file is not yet a one-click restore package.');
+ }catch(e){console.error('Raysis snapshot export failed:',e);alert('Snapshot export failed. No backup file was confirmed: '+(e.message||e));}
+ finally{if(button){button.disabled=false;button.textContent='Download cloud data snapshot (JSON)';}}
+}
+function importBackup(){
+ alert('Restore is temporarily disabled. Importing browser data directly could overwrite current records or duplicate sales, quotations, payments and stock movements. Keep this snapshot safely; a controlled restore process must be completed before importing.');
 }
 
 function clearQuote(){['qNumber','qCustomer','qContact','qItems','qTerms'].forEach(id=>$(id).value='');$('qDate').value=today();$('qValidity').value=14;$('quotePreview').classList.add('hidden');lastQuote=null}
